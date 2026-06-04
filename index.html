@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LegalAI - 法律AI知识库</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #f0f2f5;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #1a73e8, #0d47a1);
+            color: white;
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        .header h1 { font-size: 20px; }
+        .header-info { font-size: 12px; opacity: 0.9; }
+        
+        /* Main layout */
+        .main {
+            flex: 1;
+            display: flex;
+            max-width: 1400px;
+            margin: 0 auto;
+            width: 100%;
+            padding: 20px;
+            gap: 20px;
+            overflow: hidden;
+        }
+        
+        /* Sidebar */
+        .sidebar {
+            width: 280px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .sidebar-header {
+            padding: 16px;
+            border-bottom: 1px solid #eee;
+            font-weight: 600;
+            color: #333;
+        }
+        .sidebar-tabs {
+            display: flex;
+            border-bottom: 1px solid #eee;
+        }
+        .sidebar-tab {
+            flex: 1;
+            padding: 10px;
+            text-align: center;
+            cursor: pointer;
+            font-size: 13px;
+            color: #666;
+            border-bottom: 2px solid transparent;
+        }
+        .sidebar-tab.active {
+            color: #1a73e8;
+            border-bottom-color: #1a73e8;
+        }
+        .sidebar-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+        }
+        
+        /* Document list */
+        .doc-item {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            border: 1px solid #eee;
+            transition: all 0.2s;
+        }
+        .doc-item:hover { border-color: #1a73e8; background: #f8f9fa; }
+        .doc-item h4 { font-size: 14px; color: #333; margin-bottom: 4px; }
+        .doc-item span { font-size: 11px; color: #888; }
+        
+        /* Chat area */
+        .chat-area {
+            flex: 1;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .chat-header {
+            padding: 16px;
+            border-bottom: 1px solid #eee;
+            font-weight: 600;
+            color: #333;
+        }
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        .message {
+            margin-bottom: 20px;
+            animation: fadeIn 0.3s ease;
+        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } }
+        
+        .message.user { text-align: right; }
+        .message-avatar {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            margin-bottom: 6px;
+            font-size: 14px;
+        }
+        .message.user .message-avatar { background: #1a73e8; color: white; margin-left: auto; }
+        .message.assistant .message-avatar { background: #10b981; color: white; }
+        
+        .message-bubble {
+            display: inline-block;
+            max-width: 80%;
+            padding: 12px 16px;
+            border-radius: 12px;
+            font-size: 14px;
+            line-height: 1.6;
+            text-align: left;
+        }
+        .message.user .message-bubble {
+            background: #1a73e8;
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+        .message.assistant .message-bubble {
+            background: #f1f3f4;
+            color: #333;
+            border-bottom-left-radius: 4px;
+        }
+        .message-bubble pre {
+            white-space: pre-wrap;
+            font-family: inherit;
+            margin: 0;
+        }
+        .message-bubble table { border-collapse: collapse; margin: 10px 0; }
+        .message-bubble td, .message-bubble th { 
+            border: 1px solid #ddd; 
+            padding: 6px 10px; 
+            font-size: 13px;
+        }
+        .message-bubble th { background: #e8eaed; }
+        
+        .sources {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #666;
+        }
+        .sources span {
+            background: #e8f5e9;
+            color: #2e7d32;
+            padding: 2px 8px;
+            border-radius: 12px;
+            margin-right: 6px;
+        }
+        
+        /* Input area */
+        .chat-input {
+            padding: 16px;
+            border-top: 1px solid #eee;
+            display: flex;
+            gap: 12px;
+        }
+        .chat-input input {
+            flex: 1;
+            padding: 14px 18px;
+            border: 1px solid #ddd;
+            border-radius: 24px;
+            font-size: 14px;
+            outline: none;
+        }
+        .chat-input input:focus { border-color: #1a73e8; }
+        .chat-input button {
+            padding: 12px 24px;
+            background: #1a73e8;
+            color: white;
+            border: none;
+            border-radius: 24px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        .chat-input button:hover { background: #1557b0; }
+        .chat-input button:disabled { background: #ccc; cursor: not-allowed; }
+        
+        /* Welcome */
+        .welcome {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+        }
+        .welcome-icon { font-size: 48px; margin-bottom: 16px; }
+        .welcome h2 { font-size: 20px; color: #333; margin-bottom: 8px; }
+        .welcome p { font-size: 14px; }
+        
+        /* Loading */
+        .loading { 
+            display: flex; 
+            align-items: center; 
+            gap: 8px;
+            color: #666;
+            font-size: 14px;
+        }
+        .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid #e0e0e0;
+            border-top-color: #1a73e8;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        /* Status */
+        .status { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+        .status-dot { width: 6px; height: 6px; border-radius: 50%; background: #4caf50; }
+        .status-dot.error { background: #f44336; }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .main { padding: 10px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>⚖️ LegalAI 法律AI知识库</h1>
+        <div class="status">
+            <span class="status-dot" id="statusDot"></span>
+            <span id="statusText">连接中...</span>
+        </div>
+    </div>
+    
+    <div class="main">
+        <!-- 侧边栏 -->
+        <div class="sidebar">
+            <div class="sidebar-tabs">
+                <div class="sidebar-tab active" onclick="switchSidebarTab('docs')">📄 文档</div>
+                <div class="sidebar-tab" onclick="switchSidebarTab('upload')">⬆ 上传</div>
+            </div>
+            
+            <div id="tab-docs" class="sidebar-content">
+                <button onclick="loadDocuments()" style="width:100%;margin-bottom:12px;padding:10px;background:#f1f3f4;border:1px solid #ddd;border-radius:6px;cursor:pointer">
+                    🔄 刷新
+                </button>
+                <div id="docList"></div>
+            </div>
+            
+            <div id="tab-upload" class="sidebar-content" style="display:none">
+                <div style="margin-bottom:12px">
+                    <input type="text" id="docTitle" placeholder="文档标题" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;margin-bottom:8px">
+                    <select id="docType" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;margin-bottom:8px">
+                        <option value="contract">合同协议</option>
+                        <option value="case">案例文书</option>
+                        <option value="regulation">法规条例</option>
+                        <option value="other">其他</option>
+                    </select>
+                    <textarea id="docContent" placeholder="文档内容..." style="width:100%;height:150px;padding:10px;border:1px solid #ddd;border-radius:6px;margin-bottom:8px;resize:none"></textarea>
+                    <button onclick="uploadDocument()" style="width:100%;padding:10px;background:#1a73e8;color:white;border:none;border-radius:6px;cursor:pointer">
+                        上传
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 对话区 -->
+        <div class="chat-area">
+            <div class="chat-header">💬 智能问答</div>
+            
+            <div class="chat-messages" id="chatMessages">
+                <div class="welcome">
+                    <div class="welcome-icon">⚖️</div>
+                    <h2>欢迎使用 LegalAI</h2>
+                    <p>基于硅基流动 MiniMax-M2.5 模型的法律助手</p>
+                    <p>直接输入问题，我会自动搜索知识库文档并回答</p>
+                </div>
+            </div>
+            
+            <div class="chat-input">
+                <input type="text" id="questionInput" placeholder="输入您的法律问题..." onkeydown="handleKeyDown(event)">
+                <button onclick="sendQuestion()" id="sendBtn">发送</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API = 'http://localhost:3000';
+        let chatHistory = [];
+        let documents = [];
+        
+        // 初始化
+        window.onload = async () => {
+            await checkStatus();
+            await loadDocuments();
+        };
+        
+        // 检查状态
+        async function checkStatus() {
+            try {
+                const res = await fetch(`${API}/health`);
+                const data = await res.json();
+                document.getElementById('statusDot').className = 'status-dot';
+                document.getElementById('statusText').textContent = '已连接';
+            } catch(e) {
+                document.getElementById('statusDot').className = 'status-dot error';
+                document.getElementById('statusText').textContent = '未连接';
+            }
+        }
+        
+        // 侧边栏切换
+        function switchSidebarTab(tab) {
+            document.querySelectorAll('.sidebar-tab').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById('tab-docs').style.display = tab === 'docs' ? 'block' : 'none';
+            document.getElementById('tab-upload').style.display = tab === 'upload' ? 'block' : 'none';
+        }
+        
+        // 加载文档列表
+        async function loadDocuments() {
+            const res = await fetch(`${API}/documents`);
+            const data = await res.json();
+            documents = data.documents || [];
+            
+            const docList = document.getElementById('docList');
+            if (documents.length > 0) {
+                docList.innerHTML = documents.map(d => `
+                    <div class="doc-item" onclick="selectDoc('${d.id}')">
+                        <h4>📄 ${d.title}</h4>
+                        <span>${getTypeLabel(d.type)} · ${formatDate(d.created_at)}</span>
+                    </div>
+                `).join('');
+            } else {
+                docList.innerHTML = '<p style="text-align:center;color:#999;padding:20px">暂无文档</p>';
+            }
+        }
+        
+        // 选择文档
+        function selectDoc(id) {
+            const doc = documents.find(d => d.id === id);
+            if (doc) {
+                // 添加到输入框
+                document.getElementById('questionInput').value = `请分析这份${getTypeLabel(doc.type)}：${doc.title}`;
+            }
+        }
+        
+        // 上传文档
+        async function uploadDocument() {
+            const title = document.getElementById('docTitle').value;
+            const content = document.getElementById('docContent').value;
+            const type = document.getElementById('docType').value;
+            
+            if (!title || !content) {
+                alert('请填写标题和内容');
+                return;
+            }
+            
+            const res = await fetch(`${API}/documents`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, content, type })
+            });
+            
+            const data = await res.json();
+            if (data.success) {
+                document.getElementById('docTitle').value = '';
+                document.getElementById('docContent').value = '';
+                loadDocuments();
+                switchSidebarTab('docs');
+                event.target.closest('.sidebar-tab').classList.add('active');
+            }
+        }
+        
+        // 发送问题
+        async function sendQuestion() {
+            const input = document.getElementById('questionInput');
+            const question = input.value.trim();
+            if (!question) return;
+            
+            // 添加用户消息
+            addMessage('user', question);
+            chatHistory.push({ role: 'user', content: question });
+            input.value = '';
+            
+            // 添加加载中
+            const loadingEl = addLoading();
+            
+            try {
+                const res = await fetch(`${API}/ask`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ question, history: chatHistory })
+                });
+                
+                const data = await res.json();
+                loadingEl.remove();
+                
+                if (data.answer) {
+                    addMessage('assistant', data.answer, data.sources);
+                    chatHistory.push({ role: 'assistant', content: data.answer });
+                } else {
+                    addMessage('assistant', '抱歉，发生了错误：' + (data.error || '未知错误'));
+                }
+            } catch(e) {
+                loadingEl.remove();
+                addMessage('assistant', '网络错误，请检查服务器是否运行');
+            }
+        }
+        
+        // 添加消息
+        function addMessage(role, content, sources = []) {
+            const messages = document.getElementById('chatMessages');
+            
+            // 移除欢迎页
+            const welcome = messages.querySelector('.welcome');
+            if (welcome) welcome.remove();
+            
+            const div = document.createElement('div');
+            div.className = `message ${role}`;
+            
+            const avatar = role === 'user' ? '👤' : '🤖';
+            let sourcesHtml = '';
+            if (sources && sources.length > 0) {
+                sourcesHtml = `<div class="sources">参考文档：${sources.map(s => `<span>${s}</span>`).join('')}</div>`;
+            }
+            
+            // 处理 markdown 简化版
+            let html = content
+                .replace(/^### (.+)$/gm, '<h3 style="margin:10px 0 6px;font-size:14px">$1</h3>')
+                .replace(/^## (.+)$/gm, '<h2 style="margin:12px 0 8px;font-size:16px;font-weight:bold">$1</h2>')
+                .replace(/^# (.+)$/gm, '<h1 style="margin:14px 0 10px;font-size:18px;font-weight:bold">$1</h1>')
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.+?)\*/g, '<em>$1</em>')
+                .replace(/\n/g, '<br>');
+            
+            div.innerHTML = `
+                <div class="message-avatar">${avatar}</div>
+                <div class="message-bubble"><pre>${html}</pre>${sourcesHtml}</div>
+            `;
+            
+            messages.appendChild(div);
+            messages.scrollTop = messages.scrollHeight;
+            return div;
+        }
+        
+        // 添加加载
+        function addLoading() {
+            const messages = document.getElementById('chatMessages');
+            const div = document.createElement('div');
+            div.className = 'message assistant';
+            div.innerHTML = `
+                <div class="message-avatar">🤖</div>
+                <div class="message-bubble">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        AI思考中...
+                    </div>
+                </div>
+            `;
+            messages.appendChild(div);
+            messages.scrollTop = messages.scrollHeight;
+            return div;
+        }
+        
+        // 回车发送
+        function handleKeyDown(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendQuestion();
+            }
+        }
+        
+        // 工具函数
+        function getTypeLabel(type) {
+            const labels = { contract: '合同', case: '案例', regulation: '法规', brief: '意见书', other: '其他' };
+            return labels[type] || '其他';
+        }
+        
+        function formatDate(date) {
+            return new Date(date).toLocaleDateString('zh-CN');
+        }
+    </script>
+</body>
+</html>

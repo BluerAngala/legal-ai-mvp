@@ -1,0 +1,118 @@
+version: '3.9'
+
+services:
+  # iii 引擎
+  iii:
+    image: iiidev/iii:latest
+    container_name: legal-ai-iii
+    ports:
+      - "3111:3111"   # HTTP API
+      - "49134:49134"  # WebSocket
+      - "9464:9464"    # Prometheus
+    volumes:
+      - ./config/iii-config.yaml:/app/iii-config.yaml:ro
+      - ./data:/app/data
+      - ./workers:/app/workers:ro
+      - ./skills:/app/skills:ro
+    environment:
+      - NODE_ENV=production
+      - LOG_LEVEL=info
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3111/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # PostgreSQL + pgvector
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: legal-ai-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: legalai
+      POSTGRES_USER: legalai
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-legalai_secret}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./config/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U legalai -d legalai"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Qdrant 向量数据库
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: legal-ai-qdrant
+    ports:
+      - "6333:6333"   # API
+      - "6334:6334"   # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis 缓存
+  redis:
+    image: redis:7-alpine
+    container_name: legal-ai-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MinIO S3 兼容存储
+  minio:
+    image: minio/minio:latest
+    container_name: legal-ai-minio
+    ports:
+      - "9000:9000"   # API
+      - "9001:9001"   # Console
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-legalai}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-legalai_secret_key}
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # 可选: Caddy 反向代理 (TLS)
+  # caddy:
+  #   image: caddy:2-alpine
+  #   container_name: legal-ai-caddy
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./config/Caddyfile:/etc/caddy/Caddyfile:ro
+  #     - caddy_data:/data
+  #   depends_on:
+  #     - iii
+  #   restart: unless-stopped
+
+volumes:
+  postgres_data:
+  qdrant_data:
+  redis_data:
+  minio_data:
+  # caddy_data:
