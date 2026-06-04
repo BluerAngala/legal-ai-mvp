@@ -7,6 +7,17 @@ dist/
 build/
 *.tsbuildinfo
 
+# Rust
+target/
+**/target/
+**/*.rs.bk
+Cargo.lock
+
+# Tauri
+src-tauri/target/
+src-tauri/gen/
+src-tauri/WixTools/
+
 # Environment variables
 .env
 .env.local
@@ -31,3 +42,41 @@ Thumbs.db
 *.tmp
 *.temp
 .cache/
+
+# Database files
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# SQLite
+*.sqlite
+*.sqlite3
+
+# LegalAI Desktop
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
+apps/desktop/src-tauri/icons/icon.icns.tmp
+apps/desktop/dist/
+apps/desktop/release/
+
+# iii engine
+.iii/
+*.timbuktu*
+
+# Test artifacts
+test-results/
+playwright-report/
+test-output/
+coverage/
+
+# Build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini

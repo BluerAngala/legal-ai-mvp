@@ -769,7 +769,7 @@ async function deleteDocument(
 // SDK Initialization
 // ============================================
 
-const ENGINE_URL = process.env['ENGINE_URL'] ?? 'http://localhost:4000';
+const ENGINE_URL = process.env.III_ENGINE_URL ?? process.env['ENGINE_URL'] ?? 'ws://localhost:49134';
 
 const sdk = registerWorker(ENGINE_URL, { workerName: 'knowledge-worker' });
 

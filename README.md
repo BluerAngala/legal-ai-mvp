@@ -33,16 +33,15 @@
 └─────────────────────────────────────────────────────┘
 ```
 
-## 快速启动 (Windows)
+## 快速启动
 
-### 方式1: 一键启动 (推荐)
+### 方式1: 一键启动 (跨平台)
 
 ```bash
-# 双击或运行
-start-local.bat
+node scripts/start.js
 ```
 
-### 方式2: Docker (需要 Docker Desktop)
+### 方式2: Docker
 
 ```bash
 cd docker
@@ -52,31 +51,25 @@ docker compose up -d
 ### 方式3: 手动启动
 
 ```bash
-# 1. 安装依赖 (Scoop)
-scoop install postgresql redis
+# 1. 启动 PostgreSQL 和 Redis
+# 2. 设置数据库
+psql -U postgres -f config/init.sql
 
-# 2. 启动服务
-pg_ctl start -D ~/scoop/apps/postgresql/18.4/data
-redis-server
+# 3. 设置环境变量 (参考 .env.example)
+cp .env.example .env
 
-# 3. 设置数据库
-setup-db.bat
+# 4. 安装 workers
+npm install
 
-# 4. 设置环境变量
-set DATABASE_URL=postgresql://postgres:legalai123@localhost:5432/legalai
-set REDIS_URL=redis://localhost:6379
-set CLAUDE_API_KEY=your_claude_api_key
-set OPENAI_API_KEY=your_openai_api_key
+# 5. 启动 iii 引擎
+npx iii dev
 
-# 5. 安装 workers
-cd workers/upload && npm install
-cd ../document && npm install
-cd ../knowledge && npm install
-cd ../analysis && npm install
-cd ../docgen && npm install
-
-# 6. 启动 iii 引擎
-iii --use-default-config
+# 6. 启动 Workers (各自独立终端)
+cd workers/upload && npm run dev
+cd workers/document && npm run dev
+cd workers/knowledge && npm run dev
+cd workers/analysis && npm run dev
+cd workers/docgen && npm run dev
 ```
 
 ## 服务状态检查
@@ -93,7 +86,7 @@ redis-cli ping
 ## API 端点
 
 | 方法 | 路径 | 描述 |
-|------|------|------|
+:|------|------|------|
 | POST | `/api/documents/upload` | 上传文档 |
 | GET | `/api/documents/:id` | 获取文档 |
 | DELETE | `/api/documents/:id` | 删除文档 |
@@ -127,8 +120,8 @@ redis-cli ping
 
 ```
 legal-ai-mvp/
-├── start-local.bat      # Windows 一键启动脚本
-├── setup-db.bat         # 数据库初始化脚本
+├── scripts/
+│   └── start.js          # 跨平台启动脚本
 ├── workers/
 │   ├── upload/          # 上传 worker
 │   ├── document/        # 文档处理 worker
@@ -138,7 +131,7 @@ legal-ai-mvp/
 ├── skills/
 │   ├── legal-knowledge.md   # 知识库 skill
 │   ├── legal-analysis.md    # 分析 skill
-│   └── legal-docgen.md      # 生成 skill
+│   └── legal-docgen.md     # 生成 skill
 ├── config/
 │   ├── iii-config.yaml     # iii 配置文件
 │   └── init.sql            # 数据库 schema
@@ -166,13 +159,13 @@ cd workers
 mkdir my-worker
 cd my-worker
 npm init -y
-pnpm add iii-sdk
+npm install iii-sdk
 ```
 
 ### 测试 Worker
 
 ```bash
-iii console
+npm run console
 # 在 console 中查看注册的函数
 ```
 
@@ -180,8 +173,5 @@ iii console
 
 ```bash
 # 查看 worker 日志
-iii logs
-
-# 查看特定 worker
-iii logs --worker my-worker
+npm run console
 ```

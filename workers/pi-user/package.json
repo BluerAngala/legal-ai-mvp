@@ -1,0 +1,18 @@
+{
+  "name": "@legalai/pi-user",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "用户中枢 - 直接面对用户，理解需求并委派给内部中枢",
+  "scripts": {
+    "dev": "iii-sdk worker src/index.ts"
+  },
+  "dependencies": {
+    "iii-sdk": "*",
+    "openai": "^4.50.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0",
+    "tsx": "^4.7.0"
+  }
+}

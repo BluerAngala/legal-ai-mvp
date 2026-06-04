@@ -1,0 +1,116 @@
+workers:
+  - name: shell
+    config:
+      allowed_env:
+      - PATH
+      - HOME
+      - LANG
+      - LC_ALL
+      - TERM
+      allowlist:
+      - ls
+      - cat
+      - pwd
+      - echo
+      - grep
+      - wc
+      - head
+      - tail
+      - sort
+      - uniq
+      - cut
+      - date
+      - whoami
+      - hostname
+      - which
+      - jq
+      - uname
+      - df
+      - du
+      - ps
+      - printenv
+      - basename
+      - dirname
+      default_timeout_ms: 10000
+      denylist_patterns:
+      - rm\s+-rf\s+/
+      - :\(\)\s*\{\s*:\|
+      - mkfs
+      - dd\s+if=
+      - shutdown
+      - reboot
+      - /etc/passwd
+      - /etc/shadow
+      - \bfind\b[^|;&]*-exec(dir)?\b
+      - \bawk\b[^|;&]*system\s*\(
+      - \bsed\b[^|;&]*(-i\b|\be\b)
+      - \bcurl\b[^|;&]*(file://|-o\s|--output-dir\b|-F\s+@)
+      - \bgit\b[^|;&]*(--upload-pack|--receive-pack|core\.pager|core\.hooksPath|GIT_SSH_COMMAND)
+      - \b(node|python3?)\b[^|;&]*\s-(e|c)\b
+      - \bnpm\b[^|;&]*\brun\b
+      fs:
+        allow_unjailed: false
+        denylist_paths:
+        - /etc/passwd
+        - /etc/shadow
+        host_root: /tmp
+        max_read_bytes: 16777216
+        max_write_bytes: 16777216
+      inherit_env: false
+      job_retention_secs: 3600
+      max_concurrent_jobs: 16
+      max_output_bytes: 1048576
+      max_timeout_ms: 30000
+      sandbox:
+        enabled: true
+      working_dir: null
+  - name: configuration
+    config:
+      adapter:
+        config:
+          directory: ./data/configuration
+        name: fs
+      ttl_seconds: 0
+  - name: iii-directory
+    config:
+      download_timeout_ms: 60000
+      registry_url: https://api.workers.iii.dev
+      skills_folder: ./skills
+  - name: iii-observability
+    config:
+      enabled: true
+      exporter: memory
+      logs_console_output: true
+      logs_enabled: true
+      logs_exporter: memory
+      logs_max_count: 1000
+      logs_retention_seconds: 3600
+      memory_max_spans: 1000000
+      metrics_enabled: true
+      metrics_exporter: memory
+      metrics_max_count: 10000
+      metrics_retention_seconds: 3600
+      sampling_ratio: 1
+      service_name: iii
+      service_version: ${SERVICE_VERSION:__III_ENGINE_VERSION__}
+  - name: iii-queue
+    config:
+      adapter:
+        name: builtin
+  - name: iii-state
+    config:
+      adapter:
+        config:
+          file_path: ./data/state_store.db
+          store_method: file_based
+        name: kv
+  - name: iii-stream
+    config:
+      adapter:
+        config:
+          file_path: ./data/stream_store
+          store_method: file_based
+        name: kv
+      host: 127.0.0.1
+      port: 3112
+  - name: harness

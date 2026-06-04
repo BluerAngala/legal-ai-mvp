@@ -7,7 +7,7 @@ import mammoth from 'mammoth';
 import { v4 as uuidv4 } from 'uuid';
 import { readFileSync } from 'fs';
 
-const ENGINE_URL = process.env.ENGINE_URL || 'http://localhost:4000';
+const ENGINE_URL = process.env.III_ENGINE_URL ?? process.env.ENGINE_URL ?? 'ws://localhost:49134';
 
 const sdk = registerWorker(ENGINE_URL, { workerName: 'document-worker' });
 
@@ -17,11 +17,11 @@ const sdk = registerWorker(ENGINE_URL, { workerName: 'document-worker' });
 
 const config = {
   database: {
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT || '5432'),
-    database: process.env.DB_NAME || 'legal_ai',
-    user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASSWORD || 'postgres',
+    host: process.env.POSTGRES_HOST || process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.POSTGRES_PORT || process.env.DB_PORT || '5432'),
+    database: process.env.POSTGRES_DB || process.env.DB_NAME || 'legalai',
+    user: process.env.POSTGRES_USER || process.env.DB_USER || 'postgres',
+    password: process.env.POSTGRES_PASSWORD || process.env.DB_PASSWORD || 'legalai123',
   },
   openai: {
     apiKey: process.env.OPENAI_API_KEY || '',
@@ -31,7 +31,7 @@ const config = {
   chunking: {
     tokensPerChunk: 1000,
     tokenOverlap: 200,
-    charsPerToken: 4, // Approximate ratio
+    charsPerToken: 4,
   },
 };
 

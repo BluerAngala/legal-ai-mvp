@@ -7,11 +7,10 @@ import type {
   GeneratedDocument,
 } from './types.js';
 
-const { Pool } = pg;
+const DATABASE_URL = process.env.DATABASE_URL || 
+  `postgresql://${process.env.POSTGRES_USER || 'postgres'}:${process.env.POSTGRES_PASSWORD || 'legalai123'}@${process.env.POSTGRES_HOST || 'localhost'}:${process.env.POSTGRES_PORT || '5432'}/${process.env.POSTGRES_DB || 'legalai'}`;
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://localhost:5432/legal_ai',
-});
+const pool = new Pool({ connectionString: DATABASE_URL });
 
 export async function listTemplates(params: {
   category?: string;

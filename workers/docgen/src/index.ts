@@ -9,11 +9,10 @@ import type {
   ExportFormat,
 } from './types.js';
 
-// Initialize SDK
-const sdk = registerWorker(process.env.ENGINE_URL ?? 'ws://localhost:49134', {
+const ENGINE_URL = process.env.III_ENGINE_URL ?? process.env.ENGINE_URL ?? 'ws://localhost:49134';
+const sdk = registerWorker(ENGINE_URL, {
   workerName: 'docgen-worker',
 });
-
 // Validation schemas
 const listTemplatesSchema = z.object({
   category: z.enum(['contract', 'letter', 'report', 'brief']).optional(),
