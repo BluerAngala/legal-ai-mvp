@@ -1,177 +1,155 @@
-# LegalAI - 法律AI知识库MVP
+# LegalAI - 法律AI知识库 MVP
 
-基于 iii + pi 构建的法律服务AI工具，专注**快**和**准**。
+基于 **iii + pi** 架构的法律服务 AI 工具，专注**快**和**准**。
 
-## 核心功能
+## ✨ 核心特性
 
-- 📄 **知识库管理** - 上传、解析、索引法律文档
-- 🔍 **智能检索** - 语义搜索 + 关键词混合检索
-- ⚖️ **AI分析** - 合同风险识别、条款对比、法规引用
-- 📝 **文档生成** - 模板填充、多格式导出
+- 🤖 **双中枢智能调度** - pi-user（用户中枢）+ pi-internal（内部调度）
+- ⚖️ **专业法律咨询** - 基于硅基流动 Pro/MiniMaxAI/MiniMax-M2.5
+- 📚 **28条真实法条** - 民法典、刑法、劳动法、道交法、民诉法
+- 🔍 **SQLite FTS5** - 毫秒级全文检索
+- 📝 **文档生成** - 17个文书模板
+- 💼 **跨平台桌面** - Tauri v2 (Windows / macOS / Linux)
 
-## 架构
+## 🏗️ 架构
 
-```
-┌─────────────────────────────────────────────────────┐
-│  pi (coding harness) - 辅助开发                      │
-├─────────────────────────────────────────────────────┤
-│  前端层                                             │
-│    └── 任意 HTTP 客户端 / CLI / Agent                │
-├─────────────────────────────────────────────────────┤
-│  API Gateway (iii http-trigger)                      │
-├─────────────────────────────────────────────────────┤
-│  Workers:                                           │
-│    upload-worker    → 文件上传                       │
-│    document-worker  → 解析、chunk、embedding         │
-│    knowledge-worker → 检索 + 缓存                    │
-│    analysis-worker  → LLM 分析                       │
-│    docgen-worker   → 文档生成                       │
-├─────────────────────────────────────────────────────┤
-│  存储层                                             │
-│    PostgreSQL         → 关系数据 + 全文搜索          │
-│    Redis              → 缓存                        │
-└─────────────────────────────────────────────────────┘
-```
-
-## 快速启动
-
-### 方式1: 一键启动 (跨平台)
-
-```bash
-node scripts/start.js
-```
-
-### 方式2: Docker
-
-```bash
-cd docker
-docker compose up -d
-```
-
-### 方式3: 手动启动
-
-```bash
-# 1. 启动 PostgreSQL 和 Redis
-# 2. 设置数据库
-psql -U postgres -f config/init.sql
-
-# 3. 设置环境变量 (参考 .env.example)
-cp .env.example .env
-
-# 4. 安装 workers
-npm install
-
-# 5. 启动 iii 引擎
-npx iii dev
-
-# 6. 启动 Workers (各自独立终端)
-cd workers/upload && npm run dev
-cd workers/document && npm run dev
-cd workers/knowledge && npm run dev
-cd workers/analysis && npm run dev
-cd workers/docgen && npm run dev
-```
-
-## 服务状态检查
-
-```bash
-# PostgreSQL
-psql -U postgres -d legalai -c "SELECT 1;"
-
-# Redis
-redis-cli ping
-# 应该返回 PONG
-```
-
-## API 端点
-
-| 方法 | 路径 | 描述 |
-:|------|------|------|
-| POST | `/api/documents/upload` | 上传文档 |
-| GET | `/api/documents/:id` | 获取文档 |
-| DELETE | `/api/documents/:id` | 删除文档 |
-| POST | `/api/knowledge/search` | 知识检索 |
-| POST | `/api/analysis/summarize` | 摘要生成 |
-| POST | `/api/analysis/risk-review` | 风险审查 |
-| POST | `/api/analysis/qa` | 问答 |
-| POST | `/api/docgen/generate` | 文档生成 |
-| GET | `/api/templates` | 获取模板列表 |
-
-## 性能目标
-
-| 操作 | 目标 |
-|------|------|
-| 检索响应 | < 500ms |
-| 文档解析(10页PDF) | < 3s |
-| 风险分析(标准合同) | < 10s |
-| 文档生成 | < 5s |
-
-## 技术栈
-
-- **后端运行时**: iii engine
-- **SDK**: iii-sdk (Node.js)
-- **数据库**: PostgreSQL 15+ (全文搜索替代 pgvector)
-- **缓存**: Redis
-- **LLM**: Claude 3.5 Sonnet
-- **Embedding**: text-embedding-3-small
-- **文档解析**: pdf-parse, mammoth
-
-## 目录结构
-
+### Monorepo 结构
 ```
 legal-ai-mvp/
-├── scripts/
-│   └── start.js          # 跨平台启动脚本
-├── workers/
-│   ├── upload/          # 上传 worker
-│   ├── document/        # 文档处理 worker
-│   ├── knowledge/       # 知识库 worker
-│   ├── analysis/        # 分析 worker
-│   └── docgen/         # 文档生成 worker
-├── skills/
-│   ├── legal-knowledge.md   # 知识库 skill
-│   ├── legal-analysis.md    # 分析 skill
-│   └── legal-docgen.md     # 生成 skill
-├── config/
-│   ├── iii-config.yaml     # iii 配置文件
-│   └── init.sql            # 数据库 schema
-├── docker/
-│   └── docker-compose.yml  # Docker 部署
-└── package.json
+├── packages/                    # 共享包
+│   ├── database/                # SQLite 操作
+│   ├── search/                  # BM25 搜索
+│   ├── llm/                     # LLM 客户端
+│   ├── document/                # 文档处理
+│   └── core/                    # 核心业务
+├── apps/
+│   └── desktop/                 # Tauri v2 桌面应用
+│       ├── src/                 # React 前端
+│       │   ├── pages/          # 5个页面（问答/文档/检索/分析/模板）
+│       │   ├── App.tsx
+│       │   └── styles.css      # 古籍 × 现代极简美学
+│       └── src-tauri/          # Rust 后端
+│           ├── src/
+│           │   ├── ai_engine.rs       # 硅基流动集成
+│           │   ├── database.rs        # SQLite + FTS5
+│           │   ├── legal_knowledge.rs # 28条法条
+│           │   └── search.rs          # 全文检索
+│           └── legal_answers/         # 17个文书模板
+└── workers/                     # iii 引擎的 workers
+    ├── pi-user/                # 用户中枢
+    ├── pi-internal/            # 内部调度中枢
+    ├── knowledge/              # 知识库
+    ├── analysis/               # 风险分析
+    ├── document/               # 文档处理
+    ├── docgen/                 # 文档生成
+    └── upload/                 # 文件上传
 ```
 
-## 数据库连接
+### 核心设计原则
+- **零硬编码任务类型** - AI 动态理解，不预设 search/analyze
+- **零硬编码领域** - AI 自动判断领域，不限法律
+- **动态 worker 发现** - 通过 iii 引擎自动发现所有能力
+- **AI 动态规划** - 每个任务都重新规划执行步骤
+- **容错执行** - worker 失败时 LLM 直接处理或跳过
 
-- **Host**: localhost
-- **Port**: 5432
-- **Database**: legalai
-- **User**: postgres
-- **Password**: legalai123
+## 🚀 快速开始
 
-环境变量: `DATABASE_URL=postgresql://postgres:legalai123@localhost:5432/legalai`
-
-## 开发指南
-
-### 添加新 Worker
+### 桌面应用（推荐）
 
 ```bash
-cd workers
-mkdir my-worker
-cd my-worker
-npm init -y
-npm install iii-sdk
+# 安装依赖
+cd apps/desktop
+pnpm install
+
+# 开发模式
+pnpm tauri dev
+
+# 构建发布
+pnpm tauri build
 ```
 
-### 测试 Worker
+### 默认配置
 
-```bash
-npm run console
-# 在 console 中查看注册的函数
-```
+- **LLM API Key**: `sk-crwfmfqcogblddlpymiqqaatuepooklkjdelsxephytdswwe`（硅基流动）
+- **Model**: `Pro/MiniMaxAI/MiniMax-M2.5`
+- **数据库**: SQLite (自动创建于 `~/Library/Application Support/LegalAI/`)
 
-### 调试
+## 💻 使用
 
-```bash
-# 查看 worker 日志
-npm run console
-```
+1. 启动应用后默认进入「🤖 问答」页
+2. 点击示例问题或输入自己的法律问题
+3. 实时观看 worker 集团的工作流转
+4. 流式接收专业法律回答（带法条引用）
+
+### 5 个功能页
+
+| 页面 | 功能 |
+|------|------|
+| 🤖 问答 | AI 智能法律咨询 · 流式回答 · worker 流转可视化 |
+| 📄 文档 | 拖拽上传 · 列表管理 · 详情查看 |
+| 🔍 检索 | FTS5 全文搜索 · 相关度排序 |
+| ⚖️ 分析 | 风险审查 · 摘要生成 · 条款对比 |
+| 📝 模板 | 17 个法律文书模板 · 变量填充 |
+
+## 🎨 设计美学
+
+**"古籍 × 现代极简"** 风格：
+- 暗色律所背景 + 噪声纹理
+- Noto Serif SC 中文字体（宋体风骨）
+- 金色（#c9a961）+ 朱红印章（#b8412a）+ 米黄宣纸（#e8dcc4）三色系
+- 印章式 LOGO + 金色装饰线条
+
+## 🛠️ 技术栈
+
+### 前端
+- React 18 + TypeScript
+- Vite 5 (构建)
+- marked.js (Markdown 渲染)
+- 原生 CSS（无 UI 框架）
+
+### 后端
+- Tauri v2 (Rust + WebView)
+- rusqlite (SQLite + FTS5)
+- reqwest (HTTP 客户端)
+- parking_lot (同步原语)
+- tokio (异步运行时)
+
+### 引擎
+- iii 引擎 (worker 集团)
+- 硅基流动 LLM (Pro/MiniMaxAI/MiniMax-M2.5)
+- 官方 workers: shell, harness (turn-orchestrator, providers, etc.)
+
+## 📊 性能
+
+| 指标 | 数值 |
+|------|------|
+| Release 二进制 | 16 MB |
+| 前端 bundle | 207 KB JS + 34 KB CSS |
+| LLM 响应 | 2-15 秒 |
+| SQLite 检索 | 毫秒级 |
+| 启动时间 | < 1 秒 |
+
+## 📜 内置法律知识
+
+**28 条核心法条** 覆盖：
+- 民法典（合同/婚姻/侵权/继承）
+- 刑法（诈骗/故意伤害/盗窃）
+- 劳动法（工时/加班/解除）
+- 道路交通安全法（事故责任/酒驾）
+- 民事诉讼法（起诉条件/诉讼时效）
+
+**17 个文书模板**：合同、律师函、分析报告等
+
+## 🔒 隐私
+
+- 100% 本地运行（除 LLM API 调用）
+- SQLite 数据库存储在本地
+- 无数据上传到第三方
+
+## 📄 许可证
+
+MIT License
+
+---
+
+> 本项目专注于让律师和普通用户都能快速、准确地获得专业法律意见。
