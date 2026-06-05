@@ -24,7 +24,7 @@ const UPLOADS_DIR =
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 const sdk = init(cfg.engine.url, {
 	workerName: cfg.engine.workerName,
-	invocationTimeoutMs: 180_000,
+	invocationTimeoutMs: 400_000,
 });
 
 /* ---------- Schemas ---------- */

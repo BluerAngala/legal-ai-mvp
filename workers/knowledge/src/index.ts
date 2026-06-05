@@ -32,7 +32,7 @@ const log = createLogger("knowledge-worker");
 const llm = new LLMClient(cfg.llm);
 const sdk = init(cfg.engine.url, {
 	workerName: cfg.engine.workerName,
-	invocationTimeoutMs: 180_000,
+	invocationTimeoutMs: 400_000,
 });
 
 /* ---------- Constants ---------- */
@@ -81,16 +81,33 @@ async function syncBM25Index(force = false): Promise<void> {
      FROM chunks c JOIN documents d ON d.id = c.document_id
      WHERE d.status = 'indexed'`,
 	);
+	const { rows: articles } = await query<{
+		id: string;
+		code: string;
+		article: string;
+		category: string;
+		content: string;
+	}>(
+		`SELECT id, code, article, category, content FROM legal_articles WHERE is_active = true`,
+	);
 	bm25 = new BM25();
 	for (const r of rows) {
 		bm25.index({ id: r.id, title: r.document_title, content: r.content });
 	}
+	for (const a of articles) {
+		bm25.index({
+			id: `legal:${a.id}`,
+			title: `${a.code} ${a.article} (${a.category})`,
+			content: a.content,
+		});
+	}
 	bm25LoadedAt = Date.now();
-	log.info("BM25 index synced", { docs: bm25.size });
+	log.info("BM25 index synced", {
+		docs: bm25.size,
+		chunks: rows.length,
+		articles: articles.length,
+	});
 }
-
-/* ---------- Cache ---------- */
-
 function cacheKey(query: string, topK: number, collectionId?: string): string {
 	return `knowledge:search:${createHash("sha256")
 		.update(`${query}|${topK}|${collectionId ?? ""}`)
@@ -176,21 +193,53 @@ async function knowledgeSearch(input: unknown) {
 
 	// enrich 命中的 chunk
 	const ids = result.hits.map((h) => h.id);
-	const enriched =
-		ids.length > 0
+	const legalIds = ids.filter((id) => id.startsWith("legal:"));
+	const chunkIds = ids.filter((id) => !id.startsWith("legal:"));
+	const enrichedChunks =
+		chunkIds.length > 0
 			? (
 					await query<ChunkRow>(
 						`SELECT c.id, c.document_id, c.content, d.filename AS document_title
          FROM chunks c JOIN documents d ON d.id = c.document_id
          WHERE c.id = ANY($1::uuid[])`,
-						[ids],
+						[chunkIds],
 					)
 				).rows
 			: [];
-	const docMap = new Map(enriched.map((r) => [r.id, r]));
-
+	const enrichedArticles =
+		legalIds.length > 0
+			? (
+					await query<{
+						id: string;
+						code: string;
+						article: string;
+						category: string;
+						content: string;
+					}>(
+						`SELECT id, code, article, category, content FROM legal_articles WHERE id = ANY($1::uuid[])`,
+						[legalIds.map((id) => id.replace("legal:", ""))],
+					)
+				).rows
+			: [];
+	const docMap = new Map(enrichedChunks.map((r) => [r.id, r]));
+	const articleMap = new Map(enrichedArticles.map((r) => [`legal:${r.id}`, r]));
 	const finalResults = result.hits
 		.map((h) => {
+			// Legal article hit
+			if (h.id.startsWith("legal:")) {
+				const a = articleMap.get(h.id);
+				if (!a) return null;
+				return {
+					chunkId: h.id,
+					documentId: null,
+					documentTitle: `${a.code} ${a.article} (${a.category})`,
+					content: a.content,
+					snippet: h.snippet,
+					score: h.score,
+					source: "legal_article",
+				};
+			}
+			// Chunk hit
 			const r = docMap.get(h.id);
 			if (!r) return null;
 			return {

@@ -26,7 +26,7 @@ const log = createLogger("pi-user-worker");
 const llm = new LLMClient(cfg.llm);
 const sdk = init(cfg.engine.url, {
 	workerName: cfg.engine.workerName,
-	invocationTimeoutMs: 180_000,
+	invocationTimeoutMs: 400_000,
 });
 
 /* ---------- Types ---------- */
@@ -167,14 +167,18 @@ async function piAsk(input: unknown): Promise<{
 	understanding: Understanding;
 	internal: unknown;
 }> {
-	const args = input as AskInput;
+	const args = unwrapApiRequest<AskInput>(input);
+	const t0 = Date.now();
 	log.info("收到问题", { question: args.question });
-
 	// 1. 理解需求
+	const t1 = Date.now();
 	const understanding = await understandUserNeed(args);
-	log.debug("理解结果", { understanding });
-
+	log.info("理解完成", {
+		understanding,
+		durationMs: Date.now() - t1,
+	});
 	// 2. 委派给内部
+	const t2 = Date.now();
 	const internalResult = await delegateToInternal({
 		originalQuestion: args.question,
 		intent: understanding.intent,
@@ -183,14 +187,20 @@ async function piAsk(input: unknown): Promise<{
 		history: args.history,
 		attachments: args.attachments,
 	});
-
+	log.info("内部执行完成", {
+		durationMs: Date.now() - t2,
+	});
 	// 3. 友好化输出
+	const t3 = Date.now();
 	const answer = await formatForUser(
 		args.question,
 		understanding,
 		internalResult,
 	);
-
+	log.info("格式化完成", {
+		durationMs: Date.now() - t3,
+	});
+	log.info("piAsk 总耗时", { totalMs: Date.now() - t0 });
 	return { answer, understanding, internal: internalResult };
 }
 

@@ -22,7 +22,7 @@ const log = createLogger("analysis-worker");
 const llm = new LLMClient(cfg.llm);
 const sdk = init(cfg.engine.url, {
 	workerName: cfg.engine.workerName,
-	invocationTimeoutMs: 180_000,
+	invocationTimeoutMs: 400_000,
 });
 
 /* ---------- System Prompt ---------- */

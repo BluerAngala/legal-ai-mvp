@@ -30,7 +30,7 @@ const log = createLogger("pi-internal-worker");
 const llm = new LLMClient(cfg.llm);
 const sdk = init(cfg.engine.url, {
 	workerName: cfg.engine.workerName,
-	invocationTimeoutMs: 180_000,
+	invocationTimeoutMs: 400_000,
 });
 
 /* ---------- Types ---------- */
@@ -146,8 +146,9 @@ ${capsText}
 3. 步骤之间可以有依赖关系
 4. 必要时并行执行（dependsOn 相同）
 5. 优先使用最合适的能力
-6. 如果没有合适的能力，步骤可以只描述不调用函数
-7. 步骤要可执行、可验证`;
+6. **【强制】任何涉及法律条文、劳动合同、权利义务、违约责任等事实性问题，第一步必须调用 knowledge::search 查询知识库**
+7. **【强制】如果 knowledge::search 返回了结果，后续步骤必须基于这些结果回答，不得凭空编造**
+8. 步骤要可执行、可验证`;
 
 	try {
 		const messages: ChatMessage[] = [
@@ -357,25 +358,39 @@ async function piExecute(input: unknown): Promise<{
 	usedCapabilities: string[];
 }> {
 	const task = input as ExecuteInput;
+	const t0 = Date.now();
 	log.info("接收任务", { intent: task.intent });
-
 	// 1. 发现可用能力
+	const t1 = Date.now();
 	const capabilities = await discoverCapabilities();
-
+	log.info("能力发现完成", {
+		count: capabilities.length,
+		durationMs: Date.now() - t1,
+	});
 	// 2. AI 规划
+	const t2 = Date.now();
 	const plan = await planExecution({
 		intent: task.intent,
 		domain: task.domain,
 		requirements: task.requirements,
 		availableCapabilities: capabilities,
 	});
-	log.info("规划完成", { stepCount: plan.steps.length });
-
+	log.info("规划完成", {
+		stepCount: plan.steps.length,
+		durationMs: Date.now() - t2,
+	});
 	// 3. 执行
+	const t3 = Date.now();
 	const execution = await executePlan(plan, task);
-
+	log.info("步骤执行完成", {
+		stepCount: execution.steps.length,
+		durationMs: Date.now() - t3,
+	});
 	// 4. 综合结果
+	const t4 = Date.now();
 	const finalAnswer = await synthesizeResults(task, plan, execution);
+	log.info("综合完成", { durationMs: Date.now() - t4 });
+	log.info("piExecute 总耗时", { totalMs: Date.now() - t0 });
 
 	return {
 		finalAnswer,
