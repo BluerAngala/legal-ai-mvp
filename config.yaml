@@ -93,10 +93,12 @@ workers:
       registry_url: https://api.workers.iii.dev
       skills_folder: ./skills
 
-  # ──────────────────────────────────────────────────────
-  # Agent Bundle (harness)
-  # ──────────────────────────────────────────────────────
-  - name: harness
+  # ─────────────────────────────────────────────────────────
+  # Agent Bundle (harness) — 不集成
+  # 详见 docs/worker-integration-plan.md 「冲突 A：harness vs pi-internal」
+  # harness 含 turn-orchestrator / session / provider-* 等子 worker，
+  # 与 pi-internal 的能力发现 + 任务规划/执行职能重叠
+  # 如未来需 turn FSM / session 树能力，再评估引入
 
   # ──────────────────────────────────────────────────────
   # HTTP API (暴露 worker 函数为 REST 端点)
@@ -244,3 +246,57 @@ workers:
         webp: 80
       strategy: scale-to-fit
       width: 800
+
+  # storage — 对象存储（从 GitHub release storage/v0.1.1 手动安装）
+  - name: storage
+    config:
+      providers:
+        local:
+          data_dir: ./data/storage
+      buckets:
+        documents:
+          provider: local
+          bucket: documents
+        exports:
+          provider: local
+          bucket: exports
+
+  # mcp — MCP 2025-06-18 Streamable HTTP 桥接（从源码 cargo build --release）
+  # 暴露业务函数为 MCP 工具，供 Claude Desktop / Cursor / Continue 调用
+  - name: mcp
+    config:
+      api_path: /mcp
+      require_expose: false
+      hidden_prefixes:
+        - "engine::"
+        - "state::"
+        - "stream::"
+        - "iii."
+        - "iii::"
+        - "mcp::"
+        - "a2a::"
+        - "skills::"
+        - "prompts::"
+
+  - name: email
+    config:
+      accounts:
+        alice:
+          from: Alice <alice@local.test>
+          provider: smtp
+          smtp:
+            host: localhost
+            port: 3025
+            starttls: false
+        bob:
+          from: Bob <bob@local.test>
+          provider: smtp
+          smtp:
+            host: localhost
+            port: 3025
+            starttls: false
+      limits:
+        imap_connect_timeout_ms: 15000
+        max_attachment_bytes: 26214400
+        max_recipients: 100
+        send_timeout_ms: 30000
