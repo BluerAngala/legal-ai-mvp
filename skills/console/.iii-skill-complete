@@ -1,0 +1,6 @@
+{
+  "worker": "console",
+  "source": "registry",
+  "tag_or_version": "0.2.2",
+  "schema": 1
+}

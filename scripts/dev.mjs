@@ -122,14 +122,14 @@ async function startEngine() {
 		spawnProcess(
 			"engine",
 			"iii",
-			["engine", "dev", "--config", "config/iii-config.yaml"],
+			["--config", "./config.yaml"],
 			{ color: true },
 		);
 	} else {
 		spawnProcess(
 			"engine",
 			"npx",
-			["iii", "engine", "dev", "--config", "config/iii-config.yaml"],
+			["iii", "--config", "./config.yaml"],
 			{ color: true },
 		);
 	}
@@ -145,8 +145,6 @@ async function startEngine() {
 const WORKERS = [
 	"upload",
 	"document",
-	"knowledge",
-	"analysis",
 	"docgen",
 	"pi-user",
 	"pi-internal",

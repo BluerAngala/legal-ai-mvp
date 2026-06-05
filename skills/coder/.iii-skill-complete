@@ -1,0 +1,6 @@
+{
+  "worker": "coder",
+  "source": "registry",
+  "tag_or_version": "0.2.0",
+  "schema": 1
+}

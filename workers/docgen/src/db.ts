@@ -1,270 +1,169 @@
-import pg from 'pg';
+/**
+ * Docgen DB — 模板与生成文档的持久化
+ *
+ * 重构：用 @legalai/database 替换原硬编码直连。
+ */
+
+import { randomUUID } from "node:crypto";
+import { query, queryOne } from "@legalai/database";
 import type {
-  Template,
-  TemplateRow,
-  TemplateVariable,
-  GeneratedDocRow,
-  GeneratedDocument,
-} from './types.js';
+	Template,
+	TemplateRow,
+	TemplateVariable,
+	GeneratedDocument,
+	GeneratedDocRow,
+} from "./types.js";
 
-const DATABASE_URL = process.env.DATABASE_URL || 
-  `postgresql://${process.env.POSTGRES_USER || 'postgres'}:${process.env.POSTGRES_PASSWORD || 'legalai123'}@${process.env.POSTGRES_HOST || 'localhost'}:${process.env.POSTGRES_PORT || '5432'}/${process.env.POSTGRES_DB || 'legalai'}`;
+function mapTemplate(row: TemplateRow): Template {
+	return {
+		id: row.id,
+		name: row.name,
+		category: row.category as Template["category"],
+		description: row.description ?? "",
+		content: row.content,
+		variables: row.variables as unknown as TemplateVariable[],
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+	};
+}
 
-const pool = new Pool({ connectionString: DATABASE_URL });
+function mapDoc(row: GeneratedDocRow): GeneratedDocument {
+	return {
+		id: row.id,
+		templateId: row.template_id,
+		content: row.content,
+		format: row.format as GeneratedDocument["format"],
+		variables: row.variables as Record<string, unknown>,
+		metadata: row.metadata,
+		ownerId: row.owner_id,
+		createdAt: row.created_at,
+	};
+}
 
 export async function listTemplates(params: {
-  category?: string;
-  search?: string;
-  limit?: number;
-  offset?: number;
+	category?: string;
+	search?: string;
+	limit?: number;
+	offset?: number;
 }): Promise<{ templates: Template[]; total: number }> {
-  const { category, search, limit = 20, offset = 0 } = params;
+	const { category, search, limit = 20, offset = 0 } = params;
+	const values: unknown[] = [];
+	const where: string[] = ["1=1"];
+	if (category) {
+		values.push(category);
+		where.push(`category = $${values.length}`);
+	}
+	if (search) {
+		values.push(`%${search}%`);
+		where.push(
+			`(name ILIKE $${values.length} OR description ILIKE $${values.length})`,
+		);
+	}
+	const whereSql = `WHERE ${where.join(" AND ")}`;
 
-  let query = 'SELECT * FROM templates WHERE 1=1';
-  const values: unknown[] = [];
-  let paramIndex = 1;
+	const totalRow = await queryOne<{ count: string }>(
+		`SELECT COUNT(*)::text AS count FROM templates ${whereSql}`,
+		values,
+	);
+	const total = Number(totalRow?.count ?? 0);
 
-  if (category) {
-    query += ` AND category = $${paramIndex++}`;
-    values.push(category);
-  }
-
-  if (search) {
-    query += ` AND (name ILIKE $${paramIndex} OR description ILIKE $${paramIndex})`;
-    values.push(`%${search}%`);
-    paramIndex++;
-  }
-
-  const countQuery = query.replace('SELECT *', 'SELECT COUNT(*)');
-  const countResult = await pool.query(countQuery, values);
-  const total = parseInt(countResult.rows[0].count, 10);
-
-  query += ` ORDER BY created_at DESC LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
-  values.push(limit, offset);
-
-  const result = await pool.query<TemplateRow>(query, values);
-  return {
-    templates: result.rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      category: row.category as Template['category'],
-      content: row.content,
-      variables: row.variables as TemplateVariable[],
-      description: row.description ?? undefined,
-      isPublic: row.is_public,
-      createdBy: row.created_by,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    })),
-    total,
-  };
+	values.push(limit, offset);
+	const { rows } = await query<TemplateRow>(
+		`SELECT * FROM templates ${whereSql} ORDER BY created_at DESC LIMIT $${values.length - 1} OFFSET $${values.length}`,
+		values,
+	);
+	return { templates: rows.map(mapTemplate), total };
 }
 
 export async function getTemplate(id: string): Promise<Template | null> {
-  const result = await pool.query<TemplateRow>(
-    'SELECT * FROM templates WHERE id = $1',
-    [id]
-  );
-
-  if (result.rows.length === 0) {
-    return null;
-  }
-
-  const row = result.rows[0];
-  return {
-    id: row.id,
-    name: row.name,
-    category: row.category as Template['category'],
-    content: row.content,
-    variables: row.variables as TemplateVariable[],
-    description: row.description ?? undefined,
-    isPublic: row.is_public,
-    createdBy: row.created_by,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
+	const row = await queryOne<TemplateRow>(
+		`SELECT * FROM templates WHERE id = $1`,
+		[id],
+	);
+	return row ? mapTemplate(row) : null;
 }
 
-export async function getTemplateVariables(
-  templateId: string
-): Promise<TemplateVariable[]> {
-  const template = await getTemplate(templateId);
-  return template?.variables ?? [];
-}
-
-export async function saveGeneratedDocument(params: {
-  id: string;
-  templateId: string;
-  content: string;
-  format: string;
-  variables: Record<string, unknown>;
-  metadata: Record<string, unknown>;
-  ownerId: string;
-}): Promise<string> {
-  const result = await pool.query<{ id: string }>(
-    `INSERT INTO generated_documents (id, template_id, content, format, variables, metadata, owner_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
-     RETURNING id`,
-    [
-      params.id,
-      params.templateId,
-      params.content,
-      params.format,
-      JSON.stringify(params.variables),
-      JSON.stringify(params.metadata),
-      params.ownerId,
-    ]
-  );
-
-  return result.rows[0].id;
+export async function saveGeneratedDocument(input: {
+	id: string;
+	templateId: string;
+	content: string;
+	format: "markdown" | "html" | "docx";
+	variables: Record<string, unknown>;
+	metadata: Record<string, unknown>;
+	ownerId: string;
+}): Promise<GeneratedDocument> {
+	await query(
+		`INSERT INTO generated_documents (id, template_id, content, format, variables, metadata, owner_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		[
+			input.id,
+			input.templateId,
+			input.content,
+			input.format,
+			JSON.stringify(input.variables),
+			JSON.stringify(input.metadata),
+			input.ownerId,
+		],
+	);
+	const row = await queryOne<GeneratedDocRow>(
+		`SELECT * FROM generated_documents WHERE id = $1`,
+		[input.id],
+	);
+	if (!row) throw new Error("Failed to load generated document after insert");
+	return mapDoc(row);
 }
 
 export async function getGeneratedDocument(
-  id: string
+	id: string,
 ): Promise<GeneratedDocument | null> {
-  const result = await pool.query<GeneratedDocRow & { template_name: string }>(
-    `SELECT gd.*, t.name as template_name
-     FROM generated_documents gd
-     JOIN templates t ON gd.template_id = t.id
-     WHERE gd.id = $1`,
-    [id]
-  );
-
-  if (result.rows.length === 0) {
-    return null;
-  }
-  const row = result.rows[0];
-  const meta = row.metadata as { generatedAt?: string; generatedBy?: string; wordCount?: number };
-  return {
-    id: row.id,
-    templateId: row.template_id,
-    templateName: row.template_name,
-    content: row.content,
-    format: row.format as GeneratedDocument['format'],
-    variables: row.variables,
-    metadata: {
-      generatedAt: meta.generatedAt ? new Date(meta.generatedAt) : row.created_at,
-      generatedBy: meta.generatedBy || 'unknown',
-      wordCount: meta.wordCount || 0,
-    },
-  };
+	const row = await queryOne<GeneratedDocRow>(
+		`SELECT * FROM generated_documents WHERE id = $1`,
+		[id],
+	);
+	return row ? mapDoc(row) : null;
 }
 
-export async function createTemplate(params: {
-  name: string;
-  category: Template['category'];
-  content: string;
-  variables: TemplateVariable[];
-  description?: string;
-  isPublic?: boolean;
-  createdBy: string;
-}): Promise<Template> {
-  const result = await pool.query<TemplateRow>(
-    `INSERT INTO templates (name, category, content, variables, description, is_public, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
-     RETURNING *`,
-    [
-      params.name,
-      params.category,
-      params.content,
-      JSON.stringify(params.variables),
-      params.description ?? null,
-      params.isPublic ?? false,
-      params.createdBy,
-    ]
-  );
-
-  const row = result.rows[0];
-  return {
-    id: row.id,
-    name: row.name,
-    category: row.category as Template['category'],
-    content: row.content,
-    variables: row.variables as TemplateVariable[],
-    description: row.description ?? undefined,
-    isPublic: row.is_public,
-    createdBy: row.created_by,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
+export function newDocId(): string {
+	return randomUUID();
 }
 
-export async function updateTemplate(
-  id: string,
-  params: Partial<{
-    name: string;
-    category: Template['category'];
-    content: string;
-    variables: TemplateVariable[];
-    description: string;
-    isPublic: boolean;
-  }>
-): Promise<Template | null> {
-  const updates: string[] = [];
-  const values: unknown[] = [];
-  let paramIndex = 1;
-
-  if (params.name !== undefined) {
-    updates.push(`name = $${paramIndex++}`);
-    values.push(params.name);
-  }
-  if (params.category !== undefined) {
-    updates.push(`category = $${paramIndex++}`);
-    values.push(params.category);
-  }
-  if (params.content !== undefined) {
-    updates.push(`content = $${paramIndex++}`);
-    values.push(params.content);
-  }
-  if (params.variables !== undefined) {
-    updates.push(`variables = $${paramIndex++}`);
-    values.push(JSON.stringify(params.variables));
-  }
-  if (params.description !== undefined) {
-    updates.push(`description = $${paramIndex++}`);
-    values.push(params.description);
-  }
-  if (params.isPublic !== undefined) {
-    updates.push(`is_public = $${paramIndex++}`);
-    values.push(params.isPublic);
-  }
-
-  if (updates.length === 0) {
-    return getTemplate(id);
-  }
-
-  values.push(id);
-  const result = await pool.query<TemplateRow>(
-    `UPDATE templates SET ${updates.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
-    values
-  );
-
-  if (result.rows.length === 0) {
-    return null;
-  }
-
-  const row = result.rows[0];
-  return {
-    id: row.id,
-    name: row.name,
-    category: row.category as Template['category'],
-    content: row.content,
-    variables: row.variables as TemplateVariable[],
-    description: row.description ?? undefined,
-    isPublic: row.is_public,
-    createdBy: row.created_by,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
+export interface CreateTemplateInput {
+	name: string;
+	category: "contract" | "letter" | "report" | "brief";
+	content: string;
+	variables: Array<{
+		name: string;
+		type: "text" | "date" | "number" | "select" | "document_ref";
+		label: string;
+		required: boolean;
+		defaultValue?: string | number;
+		options?: Array<{ value: string; label: string }>;
+		description?: string;
+	}>;
+	description?: string;
+	isPublic?: boolean;
+	createdBy?: string;
 }
 
-export async function deleteTemplate(id: string): Promise<boolean> {
-  const result = await pool.query('DELETE FROM templates WHERE id = $1', [id]);
-  return (result.rowCount ?? 0) > 0;
+export async function createTemplate(
+	input: CreateTemplateInput,
+): Promise<Template> {
+	const id = randomUUID();
+	await query(
+		`INSERT INTO templates (id, name, category, description, content, variables, is_public, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		[
+			id,
+			input.name,
+			input.category,
+			input.description ?? null,
+			input.content,
+			JSON.stringify(input.variables),
+			input.isPublic ?? false,
+			input.createdBy ?? "system",
+		],
+	);
+	const tpl = await getTemplate(id);
+	if (!tpl) throw new Error("Failed to load template after insert");
+	return tpl;
 }
-
-export async function closePool(): Promise<void> {
-  await pool.end();
-}
-
-export { pool };

@@ -1,128 +1,399 @@
 /**
- * LLM Client - 支持 Claude 和 OpenAI
+ * @legalai/llm - 多 LLM Provider 统一客户端
+ *
+ * 支持 provider（OpenAI 兼容协议 + Anthropic 原生协议）：
+ *   - siliconflow（默认）
+ *   - openai
+ *   - deepseek
+ *   - ollama（本地）
+ *   - anthropic（用 SDK）
+ *
+ * 设计：
+ *   - 不持有任何默认密钥/模型名 — 由 packages/config 提供
+ *   - 风险关键词/模板可注入（detectRiskKeywords 接受外部数据）
+ *   - chat / streamChat / embed 三个核心方法
  */
 
-export interface AnalysisResult {
-  summary: string;
-  risks: RiskItem[];
-  confidence: number;
+import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
+import { LLMError, type Logger, createLogger } from "@legalai/core";
+
+export type LLMProvider =
+	| "siliconflow"
+	| "openai"
+	| "anthropic"
+	| "deepseek"
+	| "ollama";
+
+export interface LLMConfig {
+	provider: LLMProvider;
+	apiKey: string;
+	baseUrl?: string;
+	chatModel: string;
+	embeddingModel?: string;
+}
+
+export interface ChatMessage {
+	role: "system" | "user" | "assistant";
+	content: string;
+}
+
+export interface ChatOptions {
+	temperature?: number;
+	maxTokens?: number;
+	stop?: string[];
+	jsonMode?: boolean;
+}
+
+export interface EmbeddingVector {
+	index: number;
+	vector: number[];
+}
+
+/* ---------- Risk Detection (无硬编码关键词) ---------- */
+
+export interface RiskKeyword {
+	keyword: string;
+	level: "high" | "medium" | "low";
+	desc: string;
 }
 
 export interface RiskItem {
-  clause: string;
-  risk_level: 'high' | 'medium' | 'low';
-  description: string;
-  suggestion: string;
+	clause: string;
+	risk_level: "high" | "medium" | "low";
+	description: string;
+	suggestion: string;
+	keyword: string;
+	offset: number;
 }
 
-export interface LLMConfig {
-  provider: 'claude' | 'openai' | 'ollama';
-  apiKey?: string;
-  baseUrl?: string;
-  model?: string;
-}
-
-const RISK_KEYWORDS: Array<{ keyword: string; level: 'high' | 'medium' | 'low'; desc: string }> = [
-  { keyword: '违约金', level: 'high', desc: '违约金条款可能对一方不利' },
-  { keyword: '赔偿', level: 'high', desc: '赔偿条款需仔细审查' },
-  { keyword: '免责', level: 'high', desc: '免责条款可能免除对方责任' },
-  { keyword: '竞业', level: 'high', desc: '竞业限制需符合法律规定' },
-  { keyword: '担保', level: 'high', desc: '担保条款需明确担保范围' },
-  { keyword: '抵押', level: 'high', desc: '抵押登记手续需完备' },
-  { keyword: '终止', level: 'medium', desc: '终止条款需明确条件和后果' },
-  { keyword: '变更', level: 'medium', desc: '变更条款需双方协商一致' },
-  { keyword: '转让', level: 'medium', desc: '转让条款需符合法律规定' },
-  { keyword: '不可抗力', level: 'medium', desc: '不可抗力条款需明确定义和责任' },
-  { keyword: '保密', level: 'low', desc: '保密义务是常规条款' },
-  { keyword: '知识产权', level: 'low', desc: '知识产权归属需明确' },
-  { keyword: '通知', level: 'low', desc: '通知方式需符合合同约定' },
-];
+/* ---------- Client ---------- */
 
 export class LLMClient {
-  private config: LLMConfig;
+	private readonly cfg: LLMConfig;
+	private readonly openai?: OpenAI;
+	private readonly anthropic?: Anthropic;
+	private readonly logger: Logger;
 
-  constructor(config: LLMConfig) {
-    this.config = config;
-  }
+	constructor(cfg: LLMConfig, logger?: Logger) {
+		this.cfg = cfg;
+		this.logger = (logger ?? createLogger("llm")).child(cfg.provider);
+		this.validate();
+		if (cfg.provider === "anthropic") {
+			this.anthropic = new Anthropic({ apiKey: cfg.apiKey });
+		} else {
+			this.openai = new OpenAI({
+				apiKey: cfg.apiKey,
+				baseURL: cfg.baseUrl,
+			});
+		}
+	}
 
-  async analyzeRisk(content: string): Promise<AnalysisResult> {
-    const risks = this.detectRiskKeywords(content);
-    const wordCount = content.split(/\s+/).length;
-    const charCount = content.length;
+	/* ---------- Chat (非流式) ---------- */
 
-    return {
-      summary: `文档共约 ${charCount} 字，${wordCount} 词，检测到 ${risks.length} 个潜在风险点`,
-      risks,
-      confidence: 0.85,
-    };
-  }
+	async chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> {
+		if (this.cfg.provider === "anthropic") {
+			return this.chatAnthropic(messages, opts);
+		}
+		return this.chatOpenAI(messages, opts);
+	}
 
-  async summarize(content: string, maxLength = 500): Promise<string> {
-    if (content.length <= maxLength) return content;
-    
-    const sentences = content.match(/[^.!?。！？]+[.!?。！？]+/g) ?? [];
-    let summary = '';
-    
-    for (const sentence of sentences) {
-      if ((summary + sentence).length <= maxLength) {
-        summary += sentence;
-      } else {
-        break;
-      }
-    }
-    
-    return summary || content.slice(0, maxLength) + '...';
-  }
+	private async chatOpenAI(
+		messages: ChatMessage[],
+		opts: ChatOptions,
+	): Promise<string> {
+		try {
+			const res = await this.openai!.chat.completions.create({
+				model: this.cfg.chatModel,
+				messages: messages.map((m) => ({ role: m.role, content: m.content })),
+				temperature: opts.temperature ?? 0.3,
+				max_tokens: opts.maxTokens ?? 2048,
+				stop: opts.stop,
+				response_format: opts.jsonMode ? { type: "json_object" } : undefined,
+			});
+			const content = res.choices[0]?.message?.content ?? "";
+			if (!content) throw new LLMError("Empty LLM response");
+			return content;
+		} catch (err) {
+			this.logger.error("chat failed", {
+				err: String(err),
+				model: this.cfg.chatModel,
+			});
+			throw new LLMError(
+				`OpenAI-compatible chat failed: ${(err as Error).message}`,
+				err,
+			);
+		}
+	}
 
-  async answer(content: string, question: string): Promise<string> {
-    const questionWords = question.split(/\s+/);
-    const relevantSentences = content
-      .split(/[.!?。！？\n]+/)
-      .filter(sentence => 
-        questionWords.some(word => sentence.includes(word) && word.length > 2)
-      )
-      .slice(0, 3);
+	private async chatAnthropic(
+		messages: ChatMessage[],
+		opts: ChatOptions,
+	): Promise<string> {
+		const system = messages.find((m) => m.role === "system")?.content;
+		const userMsgs = messages.filter((m) => m.role !== "system");
+		try {
+			const res = await this.anthropic!.messages.create({
+				model: this.cfg.chatModel,
+				system: system ?? "",
+				messages: userMsgs.map((m) => ({
+					role: m.role as "user" | "assistant",
+					content: m.content,
+				})),
+				max_tokens: opts.maxTokens ?? 2048,
+				temperature: opts.temperature ?? 0.3,
+			});
+			const text = res.content.find((c) => c.type === "text");
+			if (!text || text.type !== "text")
+				throw new LLMError("Empty Anthropic response");
+			return text.text;
+		} catch (err) {
+			this.logger.error("anthropic chat failed", { err: String(err) });
+			throw new LLMError(
+				`Anthropic chat failed: ${(err as Error).message}`,
+				err,
+			);
+		}
+	}
 
-    if (relevantSentences.length === 0) {
-      return '抱歉，未找到与您问题相关的内容。';
-    }
+	/* ---------- Stream Chat ---------- */
 
-    return relevantSentences.join('。') + '。';
-  }
+	async *streamChat(
+		messages: ChatMessage[],
+		opts: ChatOptions = {},
+	): AsyncIterable<string> {
+		if (this.cfg.provider === "anthropic") {
+			yield* this.streamAnthropic(messages, opts);
+			return;
+		}
+		yield* this.streamOpenAI(messages, opts);
+	}
 
-  private detectRiskKeywords(content: string): RiskItem[] {
-    const detectedRisks: RiskItem[] = [];
+	private async *streamOpenAI(
+		messages: ChatMessage[],
+		opts: ChatOptions,
+	): AsyncIterable<string> {
+		try {
+			const stream = await this.openai!.chat.completions.create({
+				model: this.cfg.chatModel,
+				messages: messages.map((m) => ({ role: m.role, content: m.content })),
+				temperature: opts.temperature ?? 0.3,
+				max_tokens: opts.maxTokens ?? 2048,
+				stream: true,
+			});
+			for await (const chunk of stream) {
+				const delta = chunk.choices[0]?.delta?.content;
+				if (delta) yield delta;
+			}
+		} catch (err) {
+			throw new LLMError(
+				`OpenAI stream failed: ${(err as Error).message}`,
+				err,
+			);
+		}
+	}
 
-    for (const { keyword, level, desc } of RISK_KEYWORDS) {
-      if (content.includes(keyword)) {
-        const sentences = content.split(/[.!?。！？\n]+/);
-        const relevantSentence = sentences.find(s => s.includes(keyword)) || keyword;
-        
-        detectedRisks.push({
-          clause: `包含「${keyword}」条款`,
-          risk_level: level,
-          description: desc,
-          suggestion: `建议审查「${keyword}」相关条款，确保符合双方利益`,
-        });
-      }
-    }
+	private async *streamAnthropic(
+		messages: ChatMessage[],
+		opts: ChatOptions,
+	): AsyncIterable<string> {
+		const system = messages.find((m) => m.role === "system")?.content;
+		const userMsgs = messages.filter((m) => m.role !== "system");
+		try {
+			const stream = await this.anthropic!.messages.stream({
+				model: this.cfg.chatModel,
+				system: system ?? "",
+				messages: userMsgs.map((m) => ({
+					role: m.role as "user" | "assistant",
+					content: m.content,
+				})),
+				max_tokens: opts.maxTokens ?? 2048,
+				temperature: opts.temperature ?? 0.3,
+			});
+			for await (const event of stream) {
+				if (
+					event.type === "content_block_delta" &&
+					event.delta.type === "text_delta"
+				) {
+					yield event.delta.text;
+				}
+			}
+		} catch (err) {
+			throw new LLMError(
+				`Anthropic stream failed: ${(err as Error).message}`,
+				err,
+			);
+		}
+	}
 
-    return detectedRisks;
-  }
+	/* ---------- Embedding ---------- */
+
+	async embed(texts: string[]): Promise<EmbeddingVector[]> {
+		if (this.cfg.provider === "anthropic") {
+			throw new LLMError(
+				"Anthropic does not provide embeddings. Configure a separate embedding provider.",
+			);
+		}
+		if (!this.cfg.embeddingModel) {
+			throw new LLMError(
+				`Provider ${this.cfg.provider} requires LLM_EMBEDDING_MODEL`,
+			);
+		}
+		try {
+			const res = await this.openai!.embeddings.create({
+				model: this.cfg.embeddingModel,
+				input: texts,
+			});
+			return res.data.map((d, i) => ({
+				index: i,
+				vector: d.embedding as number[],
+			}));
+		} catch (err) {
+			throw new LLMError(`Embedding failed: ${(err as Error).message}`, err);
+		}
+	}
+
+	/* ---------- 风险关键词扫描（关键词从外部注入） ---------- */
+
+	/**
+	 * 在文本中扫描风险关键词。
+	 * 关键词列表必须由调用方提供（数据库 / config / Skill）— 包内不持有任何默认列表。
+	 */
+	detectRiskKeywords(text: string, keywords: RiskKeyword[]): RiskItem[] {
+		if (!keywords || keywords.length === 0) return [];
+		const detected: RiskItem[] = [];
+		const SENT_END = new Set(["。", "；", "!", "?", "!", "?", "\n", "\r"]);
+		const SENT_START = SENT_END;
+
+		for (const { keyword, level, desc } of keywords) {
+			if (!keyword) continue;
+			let searchFrom = 0;
+			while (true) {
+				const idx = text.indexOf(keyword, searchFrom);
+				if (idx === -1) break;
+
+				// 找所在句子的起止
+				let sentenceStart = 0;
+				for (let i = idx - 1; i >= 0; i--) {
+					if (SENT_START.has(text[i] ?? "")) {
+						sentenceStart = i + 1;
+						break;
+					}
+				}
+				let sentenceEnd = text.length;
+				for (let i = idx + keyword.length; i < text.length; i++) {
+					if (SENT_END.has(text[i] ?? "")) {
+						sentenceEnd = i + 1;
+						break;
+					}
+				}
+				const raw = text.slice(sentenceStart, sentenceEnd).trim();
+				const clause = raw || `包含「${keyword}」条款`;
+
+				detected.push({
+					clause,
+					risk_level: level,
+					description: desc,
+					suggestion: `建议审查「${keyword}」相关条款，确保符合双方利益`,
+					keyword,
+					offset: idx,
+				});
+				searchFrom = idx + keyword.length;
+			}
+		}
+
+		return detected;
+	}
+
+	/* ---------- 辅助 ---------- */
+
+	private validate(): void {
+		if (!this.cfg.apiKey) {
+			throw new LLMError("LLM API key is required (set LLM_API_KEY in .env)");
+		}
+		if (!this.cfg.chatModel) {
+			throw new LLMError(
+				"LLM chat model is required (set LLM_CHAT_MODEL in .env)",
+			);
+		}
+	}
 }
 
-let client: LLMClient | null = null;
+/* ---------- JSON 抽取工具 ---------- */
 
-export function getLLMClient(config?: LLMConfig): LLMClient {
-  if (!client && config) {
-    client = new LLMClient(config);
-  }
-  if (!client) {
-    client = new LLMClient({
-      provider: 'claude',
-      apiKey: '',
-      model: 'claude-3-5-sonnet-20241022',
-    });
-  }
-  return client;
+/** 从 LLM 输出中提取 JSON（容忍 ```json 围栏、前后杂讯） */
+export function extractJson<T = unknown>(text: string): T {
+	const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+	const candidate = fenced?.[1]?.trim() ?? text.trim();
+	try {
+		return JSON.parse(candidate) as T;
+	} catch {
+		// 找首个平衡的 JSON 块（对象或数组）
+		const extracted = extractFirstBalancedJson(candidate);
+		if (extracted) {
+			try {
+				return JSON.parse(extracted) as T;
+			} catch (err) {
+				throw new LLMError(
+					`Cannot parse extracted JSON: ${(err as Error).message}`,
+				);
+			}
+		}
+		throw new LLMError(
+			`Cannot extract JSON from LLM output: ${text.slice(0, 200)}`,
+		);
+	}
+}
+
+/** 在字符串中找到首个平衡的 {...} 或 [...] 块（含嵌套） */
+function extractFirstBalancedJson(s: string): string | null {
+	for (let i = 0; i < s.length; i++) {
+		const ch = s[i];
+		if (ch !== "{" && ch !== "[") continue;
+		const open = ch;
+		const close = open === "{" ? "}" : "]";
+		let depth = 0;
+		let inStr = false;
+		let esc = false;
+		for (let j = i; j < s.length; j++) {
+			const c = s[j];
+			if (inStr) {
+				if (esc) {
+					esc = false;
+					continue;
+				}
+				if (c === "\\") {
+					esc = true;
+					continue;
+				}
+				if (c === '"') inStr = false;
+				continue;
+			}
+			if (c === '"') {
+				inStr = true;
+				continue;
+			}
+			if (c === open) depth++;
+			else if (c === close) {
+				depth--;
+				if (depth === 0) return s.slice(i, j + 1);
+			}
+		}
+	}
+	return null;
+}
+
+/* ---------- 单例 ---------- */
+
+let _client: LLMClient | null = null;
+export function getLLMClient(cfg?: LLMConfig): LLMClient {
+	if (!_client && cfg) _client = new LLMClient(cfg);
+	if (!_client)
+		throw new LLMError(
+			"LLMClient not initialized — call getLLMClient(cfg) first",
+		);
+	return _client;
+}
+export function resetLLMClient(): void {
+	_client = null;
 }

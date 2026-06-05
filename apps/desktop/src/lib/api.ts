@@ -8,7 +8,8 @@
  */
 
 const API_BASE =
-	(typeof import.meta !== "undefined" && (import.meta as { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE) ??
+	(typeof import.meta !== "undefined" &&
+		(import.meta as { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE) ??
 	"http://localhost:3111";
 
 export class ApiError extends Error {
@@ -39,14 +40,20 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 		} catch {
 			body = await res.text();
 		}
-		throw new ApiError(res.status, `API ${res.status} ${res.statusText} for ${path}`, body);
+		throw new ApiError(
+			res.status,
+			`API ${res.status} ${res.statusText} for ${path}`,
+			body,
+		);
 	}
 
 	if (res.status === 204) return undefined as T;
 	return (await res.json()) as T;
 }
 
-function qs(params: Record<string, string | number | undefined | null>): string {
+function qs(
+	params: Record<string, string | number | undefined | null>,
+): string {
 	const search = new URLSearchParams();
 	for (const [k, v] of Object.entries(params)) {
 		if (v !== undefined && v !== null) search.set(k, String(v));
@@ -65,7 +72,8 @@ export const upload = {
 
 	get: (id: string) => request<UploadItem>(`/api/documents/${id}`),
 
-	delete: (id: string) => request<void>(`/api/documents/${id}`, { method: "DELETE" }),
+	delete: (id: string) =>
+		request<void>(`/api/documents/${id}`, { method: "DELETE" }),
 
 	create: (formData: FormData) =>
 		request<UploadItem>(`/api/documents/upload`, {
@@ -96,7 +104,8 @@ export const knowledge = {
 			body: JSON.stringify({ query, limit }),
 		}),
 
-	reindex: () => request<{ started: boolean }>(`/api/search/reindex`, { method: "POST" }),
+	reindex: () =>
+		request<{ started: boolean }>(`/api/search/reindex`, { method: "POST" }),
 
 	health: () => request<HealthStatus>(`/api/search/health`),
 };
@@ -295,7 +304,11 @@ export interface ChatMessage {
 export interface AskResponse {
 	answer: string;
 	sources?: { document_id: string; snippet: string }[];
-	usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+	usage?: {
+		prompt_tokens: number;
+		completion_tokens: number;
+		total_tokens: number;
+	};
 	// 兼容字段（页面旧代码使用）
 	understanding?: {
 		intent?: string;
@@ -317,7 +330,12 @@ export interface ExecutionPlan {
 }
 
 export interface ExecutionResult {
-	steps: { function_id: string; output: unknown; duration_ms: number; error?: string }[];
+	steps: {
+		function_id: string;
+		output: unknown;
+		duration_ms: number;
+		error?: string;
+	}[];
 	total_ms: number;
 }
 

@@ -16,18 +16,18 @@
 
 import { readFile } from "node:fs/promises";
 import { loadConfig } from "@legalai/config";
-import { WorkerError, createLogger } from "@legalai/core";
+import { WorkerError, createLogger, unwrapApiRequest, wrapApiResponse } from "@legalai/core";
 import { query, queryOne, withTransaction } from "@legalai/database";
 import { chunkText, parseDocument } from "@legalai/document";
 import { LLMClient } from "@legalai/llm";
-import { registerWorker } from "iii-sdk";
+import { init } from "iii-sdk";
 import { z } from "zod";
 
 const cfg = loadConfig();
 const log = createLogger("document-worker");
 
 const llm = new LLMClient(cfg.llm);
-const sdk = registerWorker(cfg.engine.url, {
+const sdk = init(cfg.engine.url, {
 	workerName: cfg.engine.workerName,
 });
 
@@ -57,9 +57,10 @@ async function loadEmbeddingVector(vec: number[]): Promise<string> {
 /* ---------- Functions ---------- */
 
 async function documentParse(input: unknown) {
+	const data = unwrapApiRequest(input);
 	const { documentId } = z
 		.object({ documentId: z.string().uuid() })
-		.parse(input);
+		.parse(data);
 	const doc = await queryOne<DocRow>(
 		`SELECT id, filename, mime_type, storage_path, status FROM documents WHERE id = $1`,
 		[documentId],
@@ -158,9 +159,10 @@ async function documentParse(input: unknown) {
 }
 
 async function documentStatus(input: unknown) {
+	const data = unwrapApiRequest(input);
 	const { documentId } = z
 		.object({ documentId: z.string().uuid() })
-		.parse(input);
+		.parse(data);
 	const doc = await queryOne<DocRow & { indexed_at: string | null }>(
 		`SELECT id, filename, mime_type, status, indexed_at FROM documents WHERE id = $1`,
 		[documentId],
@@ -187,8 +189,14 @@ async function documentStatus(input: unknown) {
 
 /* ---------- Registration ---------- */
 
-sdk.registerFunction("document::parse", documentParse);
-sdk.registerFunction("document::status", documentStatus);
+sdk.registerFunction(
+	{ id: "document::parse", description: "Parse a document: read storage, chunk, embed, persist." },
+	wrapApiResponse(documentParse),
+);
+sdk.registerFunction(
+	{ id: "document::status", description: "Get document status and chunk count." },
+	wrapApiResponse(documentStatus),
+);
 
 sdk.registerTrigger({
 	type: "http",

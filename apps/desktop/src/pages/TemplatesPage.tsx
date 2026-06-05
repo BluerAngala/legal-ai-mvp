@@ -4,7 +4,8 @@ type TemplateInfo = Pick<Template, "id" | "name" | "category" | "description">;
 type TemplateDetail = Template;
 export default function TemplatesPage() {
 	const [templates, setTemplates] = useState<TemplateInfo[]>([]);
-	const [selectedTemplate, setSelectedTemplate] = useState<TemplateDetail | null>(null);
+	const [selectedTemplate, setSelectedTemplate] =
+		useState<TemplateDetail | null>(null);
 	const [variables, setVariables] = useState<Record<string, string>>({});
 	const [generatedContent, setGeneratedContent] = useState("");
 	const [category, setCategory] = useState<string>("");
@@ -64,7 +65,6 @@ export default function TemplatesPage() {
 		navigator.clipboard.writeText(generatedContent);
 		alert("已复制到剪贴板");
 	};
-
 
 	const templateVars = selectedTemplate
 		? extractVariables(selectedTemplate.content)

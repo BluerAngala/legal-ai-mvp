@@ -8,25 +8,21 @@
  *   - 上传完成后 emit 一个 'document.uploaded' 事件，由 iii 引擎路由到 document-worker
  */
 
+import { init } from "iii-sdk";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync } from "node:fs";
 import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { loadConfig } from "@legalai/config";
-import { WorkerError, createLogger } from "@legalai/core";
+import { WorkerError, createLogger, unwrapApiRequest, wrapApiResponse } from "@legalai/core";
 import { query, queryOne, withTransaction } from "@legalai/database";
-import { http, registerWorker } from "iii-sdk";
 import { z } from "zod";
-
 const cfg = loadConfig();
 const log = createLogger("upload-worker");
-
 const UPLOADS_DIR =
 	process.env.UPLOADS_DIR ?? join(process.cwd(), "data", "uploads");
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
-
-const ENGINE_URL = cfg.engine.url;
-const sdk = registerWorker(ENGINE_URL, { workerName: cfg.engine.workerName });
+const sdk = init(cfg.engine.url, { workerName: cfg.engine.workerName });
 
 /* ---------- Schemas ---------- */
 
@@ -66,7 +62,8 @@ function computeChecksum(buf: Buffer): string {
 /* ---------- Functions ---------- */
 
 async function uploadCreate(input: unknown) {
-	const { file, collectionId } = UploadInputSchema.parse(input);
+	const data = unwrapApiRequest(input);
+	const { file, collectionId } = UploadInputSchema.parse(data);
 	const buffer = Buffer.from(file.data, "base64");
 	if (buffer.length > MAX_FILE_SIZE) {
 		throw new WorkerError(
@@ -146,7 +143,8 @@ async function uploadCreate(input: unknown) {
 }
 
 async function uploadStatus(input: unknown) {
-	const { documentId } = IdParamSchema.parse(input);
+	const data = unwrapApiRequest(input);
+	const { documentId } = IdParamSchema.parse(data);
 	const row = await queryOne<DocumentRow>(
 		`SELECT id, filename, mime_type, size, checksum, status, created_at
      FROM documents WHERE id = $1`,
@@ -171,7 +169,8 @@ async function uploadStatus(input: unknown) {
 }
 
 async function uploadDelete(input: unknown) {
-	const { documentId } = IdParamSchema.parse(input);
+	const data = unwrapApiRequest(input);
+	const { documentId } = IdParamSchema.parse(data);
 	const row = await queryOne<{ storage_path: string }>(
 		`SELECT storage_path FROM documents WHERE id = $1`,
 		[documentId],
@@ -204,17 +203,18 @@ async function uploadDelete(input: unknown) {
 }
 
 async function uploadList(input: unknown) {
+	const data = unwrapApiRequest(input);
 	const args = z
 		.object({
 			collectionId: z.string().optional(),
 			limit: z.number().int().min(1).max(100).default(20),
 			offset: z.number().int().min(0).default(0),
 		})
-		.parse(input ?? {});
+		.parse(data ?? {});
 	const rows = await query<DocumentRow>(
 		`SELECT id, filename, mime_type, size, checksum, status, created_at
      FROM documents
-     WHERE ($1::text IS NULL OR collection_id = $1)
+     WHERE ($1::text IS NULL OR collection_id = $1::uuid)
      ORDER BY created_at DESC
      LIMIT $2 OFFSET $3`,
 		[args.collectionId ?? null, args.limit, args.offset],
@@ -261,14 +261,18 @@ sdk.registerTrigger({
 });
 
 /* ---------- Function Registration ---------- */
-
-sdk.registerFunction("upload::create", uploadCreate);
-sdk.registerFunction("upload::status", uploadStatus);
-sdk.registerFunction("upload::delete", uploadDelete);
-sdk.registerFunction("upload::list", uploadList);
-
+const FN_DESC: Record<string, string> = {
+	"upload::create": "上传文档（multipart base64）→ 落本地 + storage worker + DB",
+	"upload::list": "列出文档（分页 + collectionId 过滤）",
+	"upload::status": "查询文档状态",
+	"upload::delete": "删除文档（本地 + storage + DB）",
+};
+sdk.registerFunction({ id: "upload::create", description: FN_DESC["upload::create"] }, wrapApiResponse(uploadCreate));
+sdk.registerFunction({ id: "upload::status", description: FN_DESC["upload::status"] }, wrapApiResponse(uploadStatus));
+sdk.registerFunction({ id: "upload::delete", description: FN_DESC["upload::delete"] }, wrapApiResponse(uploadDelete));
+sdk.registerFunction({ id: "upload::list", description: FN_DESC["upload::list"] }, wrapApiResponse(uploadList));
 log.info("Upload worker registered", {
-	engine: ENGINE_URL,
+	engine: cfg.engine.url,
 	uploadsDir: UPLOADS_DIR,
 });
 

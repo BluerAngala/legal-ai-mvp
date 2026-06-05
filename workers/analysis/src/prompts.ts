@@ -211,29 +211,32 @@ export const QA_PROMPT = `Answer the following legal question based on the provi
 /**
  * Render prompt with variables
  */
-export function renderPrompt(template: string, variables: Record<string, string>): string {
-  let result = template;
-  for (const [key, value] of Object.entries(variables)) {
-    result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value);
-  }
-  return result;
+export function renderPrompt(
+	template: string,
+	variables: Record<string, string>,
+): string {
+	let result = template;
+	for (const [key, value] of Object.entries(variables)) {
+		result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, "g"), value);
+	}
+	return result;
 }
 
 /**
  * Validate prompt variables
  */
 export function validatePromptVariables(
-  template: string,
-  variables: Record<string, string>
+	template: string,
+	variables: Record<string, string>,
 ): { valid: boolean; missing: string[] } {
-  const pattern = /\{\{(\w+)\}\}/g;
-  const required = new Set<string>();
-  let match;
+	const pattern = /\{\{(\w+)\}\}/g;
+	const required = new Set<string>();
+	let match;
 
-  while ((match = pattern.exec(template)) !== null) {
-    required.add(match[1]);
-  }
+	while ((match = pattern.exec(template)) !== null) {
+		required.add(match[1]);
+	}
 
-  const missing = Array.from(required).filter((key) => !variables[key]);
-  return { valid: missing.length === 0, missing };
+	const missing = Array.from(required).filter((key) => !variables[key]);
+	return { valid: missing.length === 0, missing };
 }

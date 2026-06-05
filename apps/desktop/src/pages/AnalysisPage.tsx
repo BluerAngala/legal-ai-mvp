@@ -1,10 +1,17 @@
 import { useState, useEffect } from "react";
-import { analysis, upload, type AnalysisResult, type UploadItem } from "../lib/api";
+import {
+	analysis,
+	upload,
+	type AnalysisResult,
+	type UploadItem,
+} from "../lib/api";
 type DocumentInfo = UploadItem;
 export default function AnalysisPage() {
 	const [documents, setDocuments] = useState<DocumentInfo[]>([]);
 	const [selectedDoc, setSelectedDoc] = useState<string>("");
-	const [analysisType, setAnalysisType] = useState<"risk_review" | "summarize" | "clause_compare">("risk_review");
+	const [analysisType, setAnalysisType] = useState<
+		"risk_review" | "summarize" | "clause_compare"
+	>("risk_review");
 	const [result, setResult] = useState<AnalysisResult | null>(null);
 	const [loading, setLoading] = useState(false);
 	useEffect(() => {
@@ -125,55 +132,55 @@ export default function AnalysisPage() {
 				</div>
 			)}
 
-		{result && (
-			<div className="card result-card">
-				<h3 className="card-title">审查结果</h3>
-				{result.summary && (
-					<div className="analysis-summary">
-						<h4>📊 摘要</h4>
-						<p>{result.summary}</p>
-					</div>
-				)}
-				{typeof result.confidence === "number" && (
-					<div className="confidence-bar">
-						<span>可信度</span>
-						<div className="confidence-track">
-							<div
-								className="confidence-fill"
-								style={{ width: `${result.confidence * 100}%` }}
-							/>
+			{result && (
+				<div className="card result-card">
+					<h3 className="card-title">审查结果</h3>
+					{result.summary && (
+						<div className="analysis-summary">
+							<h4>📊 摘要</h4>
+							<p>{result.summary}</p>
 						</div>
-						<span className="confidence-value">
-							{Math.round(result.confidence * 100)}%
-						</span>
-					</div>
-				)}
-				{result.risks && result.risks.length > 0 && (
-					<div className="risks-list">
-						<h4>⚠ 风险条款</h4>
-						{result.risks.map((risk, index) => (
-							<div
-								key={`${risk.clause}-${index}`}
-								className={`risk-item risk-${risk.risk_level}`}
-							>
-								<div className="risk-header">
-									<span className="risk-level-badge">
-										{risk.risk_level === "high"
-											? "高风险"
-											: risk.risk_level === "medium"
-												? "中风险"
-												: "低风险"}
-									</span>
-									<span className="risk-clause">{risk.clause}</span>
-								</div>
-								<div className="risk-description">{risk.description}</div>
-								<div className="risk-suggestion">💡 {risk.suggestion}</div>
+					)}
+					{typeof result.confidence === "number" && (
+						<div className="confidence-bar">
+							<span>可信度</span>
+							<div className="confidence-track">
+								<div
+									className="confidence-fill"
+									style={{ width: `${result.confidence * 100}%` }}
+								/>
 							</div>
-						))}
-					</div>
-				)}
-			</div>
-		)}
-	</div>
+							<span className="confidence-value">
+								{Math.round(result.confidence * 100)}%
+							</span>
+						</div>
+					)}
+					{result.risks && result.risks.length > 0 && (
+						<div className="risks-list">
+							<h4>⚠ 风险条款</h4>
+							{result.risks.map((risk, index) => (
+								<div
+									key={`${risk.clause}-${index}`}
+									className={`risk-item risk-${risk.risk_level}`}
+								>
+									<div className="risk-header">
+										<span className="risk-level-badge">
+											{risk.risk_level === "high"
+												? "高风险"
+												: risk.risk_level === "medium"
+													? "中风险"
+													: "低风险"}
+										</span>
+										<span className="risk-clause">{risk.clause}</span>
+									</div>
+									<div className="risk-description">{risk.description}</div>
+									<div className="risk-suggestion">💡 {risk.suggestion}</div>
+								</div>
+							))}
+						</div>
+					)}
+				</div>
+			)}
+		</div>
 	);
 }

@@ -108,7 +108,8 @@ export default function DocumentsPage() {
 						>
 							<div className="doc-title">{doc.filename}</div>
 							<div className="doc-meta">
-								{doc.mime_type} · {new Date(doc.created_at).toLocaleDateString("zh-CN")}
+								{doc.mime_type} ·{" "}
+								{new Date(doc.created_at).toLocaleDateString("zh-CN")}
 							</div>
 							<div className="doc-actions">
 								<button
@@ -146,7 +147,10 @@ export default function DocumentsPage() {
 								<p>类型: {selectedDoc.mime_type}</p>
 								<p>大小: {(selectedDoc.size / 1024).toFixed(1)} KB</p>
 								<p>状态: {selectedDoc.status}</p>
-								<p>创建: {new Date(selectedDoc.created_at).toLocaleString("zh-CN")}</p>
+								<p>
+									创建:{" "}
+									{new Date(selectedDoc.created_at).toLocaleString("zh-CN")}
+								</p>
 							</div>
 						</div>
 					</div>

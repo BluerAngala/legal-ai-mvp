@@ -4,11 +4,16 @@
   "type": "module",
   "description": "用户中枢 - 直接面对用户，理解需求并委派给内部中枢",
   "scripts": {
-    "dev": "iii-sdk worker src/index.ts"
+    "dev": "tsx watch --env-file=../../.env src/index.ts",
+    "start": "node --import tsx/esm --env-file=../../.env src/index.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "iii-sdk": "*",
-    "openai": "^4.50.0"
+    "iii-sdk": "^0.4.0",
+    "@legalai/config": "workspace:*",
+    "@legalai/core": "workspace:*",
+    "@legalai/llm": "workspace:*",
+    "zod": "^3.23.0"
   },
   "devDependencies": {
     "typescript": "^5.4.0",
