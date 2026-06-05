@@ -2,25 +2,22 @@
   "name": "@legalai/llm",
   "version": "0.1.0",
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
   "exports": {
-    ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
-    }
+    ".": "./src/index.ts"
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --clean",
-    "dev": "tsup src/index.ts --format esm --dts --watch",
     "test": "vitest"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.35.0",
+    "@legalai/core": "workspace:*",
     "openai": "^4.0.0",
-    "@anthropic-ai/sdk": "^0.35.0"
+    "zod": "^3.23.0"
   },
   "devDependencies": {
-    "tsup": "^8.0.0",
+    "@types/node": "^20.0.0",
     "typescript": "^5.4.0",
     "vitest": "^1.4.0"
   }

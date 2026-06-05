@@ -1,0 +1,6 @@
+{
+  "worker": "iii-state",
+  "source": "registry",
+  "tag_or_version": "0.17.0",
+  "schema": 1
+}

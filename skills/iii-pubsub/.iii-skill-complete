@@ -1,0 +1,6 @@
+{
+  "worker": "iii-pubsub",
+  "source": "registry",
+  "tag_or_version": "0.18.0",
+  "schema": 1
+}

@@ -1,0 +1,6 @@
+{
+  "worker": "shell",
+  "source": "registry",
+  "tag_or_version": "0.3.6",
+  "schema": 1
+}

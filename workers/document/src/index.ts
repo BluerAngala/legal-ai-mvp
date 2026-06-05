@@ -1,440 +1,226 @@
-import { registerWorker } from 'iii-sdk';
-import { z } from 'zod';
-import { Pool } from 'pg';
-import OpenAI from 'openai';
-import pdfParse from 'pdf-parse';
-import mammoth from 'mammoth';
-import { v4 as uuidv4 } from 'uuid';
-import { readFileSync } from 'fs';
+/**
+ * Document Worker — 解析 → chunk → embedding → 写库
+ *
+ * 流程：
+ *   1) 收到 documentId，从 documents 表读 storage_path
+ *   2) 解析（@legalai/document）
+ *   3) 切分（@legalai/document.chunkText）
+ *   4) 批量 embedding（@legalai/llm.embed）
+ *   5) 写 chunks 表（含 embedding vector）
+ *   6) 更新 documents.status = 'indexed'
+ *
+ * 触发：
+ *   - HTTP: POST /api/documents/:id/parse
+ *   - Event: document.uploaded  (来自 upload-worker)
+ */
 
-const ENGINE_URL = process.env.III_ENGINE_URL ?? process.env.ENGINE_URL ?? 'ws://localhost:49134';
+import { readFile } from "node:fs/promises";
+import { loadConfig } from "@legalai/config";
+import { WorkerError, createLogger, unwrapApiRequest, wrapApiResponse } from "@legalai/core";
+import { query, queryOne, withTransaction } from "@legalai/database";
+import { chunkText, parseDocument } from "@legalai/document";
+import { LLMClient } from "@legalai/llm";
+import { init } from "iii-sdk";
+import { z } from "zod";
 
-const sdk = registerWorker(ENGINE_URL, { workerName: 'document-worker' });
+const cfg = loadConfig();
+const log = createLogger("document-worker");
 
-// ============================================================================
-// Configuration
-// ============================================================================
-
-const config = {
-  database: {
-    host: process.env.POSTGRES_HOST || process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.POSTGRES_PORT || process.env.DB_PORT || '5432'),
-    database: process.env.POSTGRES_DB || process.env.DB_NAME || 'legalai',
-    user: process.env.POSTGRES_USER || process.env.DB_USER || 'postgres',
-    password: process.env.POSTGRES_PASSWORD || process.env.DB_PASSWORD || 'legalai123',
-  },
-  openai: {
-    apiKey: process.env.OPENAI_API_KEY || '',
-    embeddingModel: 'text-embedding-3-small',
-    embeddingDimensions: 1536,
-  },
-  chunking: {
-    tokensPerChunk: 1000,
-    tokenOverlap: 200,
-    charsPerToken: 4,
-  },
-};
-
-// ============================================================================
-// Database Client
-// ============================================================================
-
-const pool = new Pool(config.database);
-
-async function query<T>(text: string, params?: unknown[]): Promise<T[]> {
-  const client = await pool.connect();
-  try {
-    const result = await client.query(text, params);
-    return result.rows as T[];
-  } finally {
-    client.release();
-  }
-}
-
-// ============================================================================
-// OpenAI Client
-// ============================================================================
-
-const openai = new OpenAI({
-  apiKey: config.openai.apiKey,
+const llm = new LLMClient(cfg.llm);
+const sdk = init(cfg.engine.url, {
+	workerName: cfg.engine.workerName,
 });
 
-// ============================================================================
-// Schema Definitions
-// ============================================================================
+/* ---------- Constants ---------- */
 
-const ParseInputSchema = z.object({
-  documentId: z.string().uuid(),
-  fileBuffer: z.instanceof(Buffer),
-  mimeType: z.string(),
-  filename: z.string(),
-});
+const CHUNK_SIZE = 800;
+const CHUNK_OVERLAP = 100;
+const EMBED_BATCH = 20;
 
-const ChunkInputSchema = z.object({
-  documentId: z.string().uuid(),
-  text: z.string(),
-});
+/* ---------- Types ---------- */
 
-const EmbedInputSchema = z.object({
-  documentId: z.string().uuid(),
-  chunks: z.array(z.object({
-    id: z.string().uuid(),
-    content: z.string(),
-    chunkIndex: z.number(),
-  })),
-});
-
-// ============================================================================
-// Document Parsing
-// ============================================================================
-
-interface ParseResult {
-  text: string;
-  metadata: {
-    pageCount?: number;
-    info?: Record<string, unknown>;
-  };
+interface DocRow {
+	id: string;
+	filename: string;
+	mime_type: string;
+	storage_path: string | null;
+	status: string;
 }
 
-async function parsePdf(buffer: Buffer): Promise<ParseResult> {
-  const data = await pdfParse(buffer);
-  return {
-    text: data.text,
-    metadata: {
-      pageCount: data.numpages,
-      info: data.info,
-    },
-  };
+/* ---------- Helpers ---------- */
+
+async function loadEmbeddingVector(vec: number[]): Promise<string> {
+	// pgvector 用 '[1,2,3]' 格式
+	return `[${vec.join(",")}]`;
 }
 
-async function parseDocx(buffer: Buffer): Promise<ParseResult> {
-  const result = await mammoth.extractRawText({ buffer });
-  return {
-    text: result.value,
-    metadata: {},
-  };
+/* ---------- Functions ---------- */
+
+async function documentParse(input: unknown) {
+	const data = unwrapApiRequest(input);
+	const { documentId } = z
+		.object({ documentId: z.string().uuid() })
+		.parse(data);
+	const doc = await queryOne<DocRow>(
+		`SELECT id, filename, mime_type, storage_path, status FROM documents WHERE id = $1`,
+		[documentId],
+	);
+	if (!doc)
+		throw new WorkerError(
+			"document",
+			`Document not found: ${documentId}`,
+			undefined,
+			{ statusCode: 404 },
+		);
+	if (!doc.storage_path)
+		throw new WorkerError(
+			"document",
+			`Document has no storage_path: ${documentId}`,
+		);
+
+	// 1) 解析
+	log.info("Parsing document", { documentId, filename: doc.filename });
+	const buffer = await readFile(doc.storage_path);
+	const parsed = await parseDocument(buffer, doc.filename);
+	log.info("Document parsed", {
+		documentId,
+		textLength: parsed.text.length,
+		pages: parsed.meta.pages,
+	});
+
+	// 2) 切分
+	const chunks = chunkText(parsed.text, {
+		chunkSize: CHUNK_SIZE,
+		overlap: CHUNK_OVERLAP,
+	});
+	if (chunks.length === 0) {
+		throw new WorkerError(
+			"document",
+			`Document has no extractable text: ${documentId}`,
+		);
+	}
+	log.info("Chunked", { documentId, chunks: chunks.length });
+
+	// 3) 状态置 indexing（可观察性）
+	await query(`UPDATE documents SET status = 'indexing' WHERE id = $1`, [
+		documentId,
+	]);
+
+	// 4) 批量 embedding
+	const vectors: number[][] = [];
+	for (let i = 0; i < chunks.length; i += EMBED_BATCH) {
+		const batch = chunks.slice(i, i + EMBED_BATCH).map((c) => c.text);
+		const embeds = await llm.embed(batch);
+		for (const e of embeds) vectors.push(e.vector);
+	}
+	if (vectors.length !== chunks.length) {
+		throw new WorkerError(
+			"document",
+			`Embedding count mismatch: ${vectors.length} vs ${chunks.length}`,
+		);
+	}
+
+	// 5) 落库（事务：删旧 chunk + 写新 chunk + 更新状态）
+	await withTransaction(async (client) => {
+		await client.query(`DELETE FROM chunks WHERE document_id = $1`, [
+			documentId,
+		]);
+		for (let i = 0; i < chunks.length; i++) {
+			const c = chunks[i]!;
+			const v = vectors[i]!;
+			const vecLiteral = await loadEmbeddingVector(v);
+			await client.query(
+				`INSERT INTO chunks (id, document_id, chunk_index, content, start_char, end_char, token_count, embedding)
+         VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7::vector)`,
+				[
+					documentId,
+					i,
+					c.text,
+					c.startChar,
+					c.endChar,
+					c.text.length,
+					vecLiteral,
+				],
+			);
+		}
+		await client.query(
+			`UPDATE documents SET status = 'indexed', indexed_at = NOW() WHERE id = $1`,
+			[documentId],
+		);
+	});
+
+	log.info("Indexing complete", { documentId, chunks: chunks.length });
+	return {
+		documentId,
+		chunks: chunks.length,
+		pages: parsed.meta.pages,
+		bytes: parsed.meta.size,
+	};
 }
 
-async function parseDocument(
-  fileBuffer: Buffer,
-  mimeType: string
-): Promise<ParseResult> {
-  if (mimeType === 'application/pdf') {
-    return parsePdf(fileBuffer);
-  } else if (
-    mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-  ) {
-    return parseDocx(fileBuffer);
-  } else {
-    throw new Error(`Unsupported mime type: ${mimeType}`);
-  }
+async function documentStatus(input: unknown) {
+	const data = unwrapApiRequest(input);
+	const { documentId } = z
+		.object({ documentId: z.string().uuid() })
+		.parse(data);
+	const doc = await queryOne<DocRow & { indexed_at: string | null }>(
+		`SELECT id, filename, mime_type, status, indexed_at FROM documents WHERE id = $1`,
+		[documentId],
+	);
+	if (!doc)
+		throw new WorkerError(
+			"document",
+			`Document not found: ${documentId}`,
+			undefined,
+			{ statusCode: 404 },
+		);
+	const { rows: countRows } = await query<{ count: string }>(
+		`SELECT COUNT(*)::text AS count FROM chunks WHERE document_id = $1`,
+		[documentId],
+	);
+	return {
+		documentId: doc.id,
+		filename: doc.filename,
+		status: doc.status,
+		indexedAt: doc.indexed_at,
+		chunkCount: Number(countRows[0]?.count ?? 0),
+	};
 }
 
-// ============================================================================
-// Text Chunking
-// ============================================================================
+/* ---------- Registration ---------- */
 
-interface Chunk {
-  id: string;
-  content: string;
-  chunkIndex: number;
-}
-
-function chunkText(text: string, tokensPerChunk: number, tokenOverlap: number): Chunk[] {
-  const charsPerChunk = tokensPerChunk * config.chunking.charsPerToken;
-  const charsOverlap = tokenOverlap * config.chunking.charsPerToken;
-  
-  // Clean and normalize text
-  const cleanedText = text
-    .replace(/\r\n/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-  
-  if (!cleanedText) {
-    return [];
-  }
-  
-  const chunks: Chunk[] = [];
-  let startIndex = 0;
-  let chunkIndex = 0;
-  
-  while (startIndex < cleanedText.length) {
-    // Calculate end index for this chunk
-    let endIndex = Math.min(startIndex + charsPerChunk, cleanedText.length);
-    
-    // If not at the end, try to break at a sentence or paragraph boundary
-    if (endIndex < cleanedText.length) {
-      // Look for paragraph break first (\n\n)
-      const paragraphBreak = cleanedText.lastIndexOf('\n\n', endIndex);
-      if (paragraphBreak > startIndex + charsPerChunk / 2) {
-        endIndex = paragraphBreak + 2;
-      } else {
-        // Look for sentence break
-        const sentenceBreak = cleanedText.lastIndexOf('. ', endIndex);
-        if (sentenceBreak > startIndex + charsPerChunk / 2) {
-          endIndex = sentenceBreak + 2;
-        }
-      }
-    }
-    
-    const chunkContent = cleanedText.slice(startIndex, endIndex).trim();
-    
-    if (chunkContent) {
-      chunks.push({
-        id: uuidv4(),
-        content: chunkContent,
-        chunkIndex: chunkIndex++,
-      });
-    }
-    
-    // Move start index with overlap
-    startIndex = endIndex - charsOverlap;
-    
-    // Ensure we make progress
-    if (startIndex <= 0 || startIndex >= cleanedText.length) {
-      break;
-    }
-  }
-  
-  return chunks;
-}
-
-// ============================================================================
-// Embedding Generation
-// ============================================================================
-
-async function generateEmbedding(text: string): Promise<number[]> {
-  const response = await openai.embeddings.create({
-    model: config.openai.embeddingModel,
-    input: text,
-    dimensions: config.openai.embeddingDimensions,
-  });
-  
-  return response.data[0].embedding;
-}
-
-async function generateEmbeddings(chunks: Chunk[]): Promise<Map<string, number[]>> {
-  const embeddings = new Map<string, number[]>();
-  
-  // Process in batches to avoid rate limits
-  const batchSize = 100;
-  
-  for (let i = 0; i < chunks.length; i += batchSize) {
-    const batch = chunks.slice(i, i + batchSize);
-    
-    const texts = batch.map(c => c.content);
-    const response = await openai.embeddings.create({
-      model: config.openai.embeddingModel,
-      input: texts,
-      dimensions: config.openai.embeddingDimensions,
-    });
-    
-    for (let j = 0; j < batch.length; j++) {
-      embeddings.set(batch[j].id, response.data[j].embedding);
-    }
-  }
-  
-  return embeddings;
-}
-
-// ============================================================================
-// Database Operations
-// ============================================================================
-
-interface DocumentRecord {
-  id: string;
-  status: string;
-}
-
-interface ChunkRecord {
-  id: string;
-  document_id: string;
-  content: string;
-  chunk_index: number;
-  embedding: string;
-  metadata: Record<string, unknown>;
-}
-
-async function saveChunksToDatabase(
-  documentId: string,
-  chunks: Chunk[],
-  embeddings: Map<string, number[]>
-): Promise<void> {
-  const client = await pool.connect();
-  
-  try {
-    await client.query('BEGIN');
-    
-    // Insert chunks
-    for (const chunk of chunks) {
-      const embedding = embeddings.get(chunk.id);
-      if (!embedding) continue;
-      
-      await client.query<ChunkRecord>(
-        `INSERT INTO document_chunks (id, document_id, content, chunk_index, embedding, metadata)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [
-          chunk.id,
-          documentId,
-          chunk.content,
-          chunk.chunkIndex,
-          `[${embedding.join(',')}]`,
-          JSON.stringify({ tokens: estimateTokens(chunk.content) }),
-        ]
-      );
-    }
-    
-    // Update document status to 'indexed'
-    await client.query<DocumentRecord>(
-      `UPDATE documents SET status = 'indexed', indexed_at = NOW() WHERE id = $1`,
-      [documentId]
-    );
-    
-    await client.query('COMMIT');
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
-  }
-}
-
-async function updateDocumentStatus(
-  documentId: string,
-  status: 'parsed' | 'indexed' | 'error',
-  errorMessage?: string
-): Promise<void> {
-  await query(
-    `UPDATE documents SET status = $1, error_message = $2 WHERE id = $3`,
-    [status, errorMessage || null, documentId]
-  );
-}
-
-function estimateTokens(text: string): number {
-  // Rough estimate: ~4 characters per token for English text
-  return Math.ceil(text.length / config.chunking.charsPerToken);
-}
-
-// ============================================================================
-// Function Registration
-// ============================================================================
-
-// document::parse - Parse PDF/Word files and extract text
-sdk.registerFunction('document::parse', async (input: { documentId: string; fileBuffer: Buffer; mimeType: string; filename: string }) => {
-  const { documentId, fileBuffer, mimeType, filename } = input;
-  
-  console.log(`Parsing document: ${filename} (${documentId})`);
-  
-  const result = await parseDocument(fileBuffer, mimeType);
-  
-  return {
-    documentId,
-    text: result.text,
-    metadata: result.metadata,
-  };
-});
-
-// document::chunk - Split text into semantic chunks
-sdk.registerFunction('document::chunk', async (input: { documentId: string; text: string }) => {
-  const { documentId, text } = input;
-  
-  console.log(`Chunking document: ${documentId}`);
-  
-  const chunks = chunkText(
-    text,
-    config.chunking.tokensPerChunk,
-    config.chunking.tokenOverlap
-  );
-  
-  return {
-    documentId,
-    chunks,
-    totalChunks: chunks.length,
-  };
-});
-
-// document::embed - Generate embeddings for text chunks
-sdk.registerFunction('document::embed', async (input: { documentId: string; chunks: Chunk[] }) => {
-  const { documentId, chunks } = input;
-  
-  console.log(`Generating embeddings for ${chunks.length} chunks of document: ${documentId}`);
-  
-  const embeddingsArray = await generateEmbeddings(chunks);
-  
-  const embeddings = chunks.map((chunk) => ({
-    chunkId: chunk.id,
-    embedding: embeddingsArray.get(chunk.id) || [],
-  }));
-  
-  return {
-    documentId,
-    embeddings,
-  };
-});
-
-// document::enqueue - Add document to processing queue
-sdk.registerFunction('document::enqueue', async (input: { documentId: string; fileBuffer: Buffer; mimeType: string; filename: string; filePath?: string }) => {
-  const { documentId, fileBuffer, mimeType, filename, filePath } = input;
-  
-  console.log(`Enqueueing document: ${filename} (${documentId})`);
-  
-  // Read file from path if not provided as buffer
-  const buffer = fileBuffer || (filePath ? readFileSync(filePath) : Buffer.alloc(0));
-  
-  // Step 1: Parse document
-  console.log(`Parsing document: ${documentId}`);
-  const parseResult = await parseDocument(buffer, mimeType);
-  
-  // Update status to 'parsed'
-  await updateDocumentStatus(documentId, 'parsed');
-  
-  // Step 2: Chunk text
-  console.log(`Chunking document: ${documentId}`);
-  const chunks = chunkText(
-    parseResult.text,
-    config.chunking.tokensPerChunk,
-    config.chunking.tokenOverlap
-  );
-  
-  if (chunks.length === 0) {
-    await updateDocumentStatus(documentId, 'error', 'No content extracted from document');
-    return {
-      documentId,
-      queued: false,
-      queueName: 'document::enqueue',
-      error: 'No content extracted from document',
-    };
-  }
-  
-  console.log(`Generated ${chunks.length} chunks for document: ${documentId}`);
-  
-  // Step 3: Generate embeddings
-  console.log(`Generating embeddings for document: ${documentId}`);
-  const embeddings = await generateEmbeddings(chunks);
-  
-  // Step 4: Save to database
-  console.log(`Saving chunks to database for document: ${documentId}`);
-  await saveChunksToDatabase(documentId, chunks, embeddings);
-  
-  console.log(`Successfully processed document: ${documentId}`);
-  
-  return {
-    documentId,
-    queued: true,
-    queueName: 'document::enqueue',
-    totalChunks: chunks.length,
-  };
-});
-
-// ============================================================================
-// HTTP Trigger Registration
-// ============================================================================
+sdk.registerFunction(
+	{ id: "document::parse", description: "Parse a document: read storage, chunk, embed, persist." },
+	wrapApiResponse(documentParse),
+);
+sdk.registerFunction(
+	{ id: "document::status", description: "Get document status and chunk count." },
+	wrapApiResponse(documentStatus),
+);
 
 sdk.registerTrigger({
-  type: 'http',
-  function_id: 'document::parse',
-  config: {
-    api_path: '/api/document/parse',
-    http_method: 'POST',
-  },
+	type: "http",
+	function_id: "document::parse",
+	config: { api_path: "/api/documents/:id/parse", http_method: "POST" },
 });
+sdk.registerTrigger({
+	type: "http",
+	function_id: "document::status",
+	config: { api_path: "/api/documents/:id/status", http_method: "GET" },
+});
+
+// 队列触发：upload-worker 发出 'document-parse' topic 时自动解析
+// 相比 event trigger，队列提供持久化、重试、DLQ
+try {
+	sdk.registerTrigger({
+		type: "durable:subscriber",
+		function_id: "document::parse",
+		config: { topic: "document-parse" },
+	});
+} catch {
+	// 部分 SDK 版本不支持 durable:subscriber，忽略
+}
+
+log.info("Document worker registered", { engine: cfg.engine.url });
+
+export { documentParse, documentStatus };

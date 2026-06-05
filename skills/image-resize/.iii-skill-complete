@@ -1,0 +1,6 @@
+{
+  "worker": "image-resize",
+  "source": "registry",
+  "tag_or_version": "0.1.2",
+  "schema": 1
+}

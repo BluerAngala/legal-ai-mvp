@@ -1,0 +1,18 @@
+{
+	"files": [],
+	"references": [
+		{ "path": "./packages/core" },
+		{ "path": "./packages/config" },
+		{ "path": "./packages/database" },
+		{ "path": "./packages/document" },
+		{ "path": "./packages/llm" },
+		{ "path": "./packages/search" },
+		{ "path": "./workers/upload" },
+		{ "path": "./workers/document" },
+		{ "path": "./workers/knowledge" },
+		{ "path": "./workers/analysis" },
+		{ "path": "./workers/docgen" },
+		{ "path": "./workers/pi-user" },
+		{ "path": "./workers/pi-internal" }
+	]
+}

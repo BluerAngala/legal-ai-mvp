@@ -1,18 +1,31 @@
 {
-  "name": "legalai-monorepo",
-  "version": "0.1.0",
-  "private": true,
-  "packageManager": "pnpm@9.0.0",
-  "scripts": {
-    "dev:desktop": "pnpm --filter legalai-desktop dev",
-    "build:desktop": "pnpm --filter legalai-desktop build",
-    "build": "pnpm -r build",
-    "test": "pnpm -r test",
-    "lint": "pnpm -r lint"
-  },
-  "pnpm": {
-    "overrides": {
-      "tauri-sys@^2": "npm:@nicolo-ribaudo/pm-proxy@^2"
-    }
-  }
+	"name": "legalai-monorepo",
+	"version": "0.1.0",
+	"private": true,
+	"packageManager": "pnpm@9.0.0",
+	"scripts": {
+		"dev:db": "docker compose -f docker/docker-compose.yml up -d postgres redis",
+		"dev:engine": "iii engine dev",
+		"dev:workers": "concurrently -k -n upload,document,knowledge,analysis,docgen,pi-user,pi-internal -c blue,green,yellow,magenta,cyan,gray,white \"pnpm --filter @legalai/upload-worker dev\" \"pnpm --filter @legalai/document-worker dev\" \"pnpm --filter @legalai/knowledge-worker dev\" \"pnpm --filter @legalai/analysis-worker dev\" \"pnpm --filter @legalai/docgen-worker dev\" \"pnpm --filter @legalai/pi-user dev\" \"pnpm --filter @legalai/pi-internal dev\"",
+		"dev:desktop": "pnpm --filter legalai-desktop tauri dev",
+		"dev:web": "pnpm --filter legalai-desktop dev",
+		"dev": "node scripts/dev.mjs",
+		"build": "pnpm -r build",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"lint": "biome check .",
+		"format": "biome format --write .",
+		"typecheck": "tsc -b"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^1.9.0",
+		"concurrently": "^9.0.0",
+		"typescript": "^5.6.0",
+		"vitest": "^2.1.0"
+	},
+	"pnpm": {
+		"overrides": {
+			"tauri-sys@^2": "npm:@nicolo-ribaudo/pm-proxy@^2"
+		}
+	}
 }

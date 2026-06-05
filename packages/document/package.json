@@ -2,25 +2,21 @@
   "name": "@legalai/document",
   "version": "0.1.0",
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
   "exports": {
-    ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
-    }
+    ".": "./src/index.ts"
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --clean",
-    "dev": "tsup src/index.ts --format esm --dts --watch",
     "test": "vitest"
   },
   "dependencies": {
-    "pdf-parse": "^1.1.1",
-    "mammoth": "^1.8.0"
+    "@legalai/core": "workspace:*",
+    "mammoth": "^1.7.0",
+    "pdfjs-dist": "^4.0.0"
   },
   "devDependencies": {
-    "tsup": "^8.0.0",
+    "@types/node": "^20.0.0",
     "typescript": "^5.4.0",
     "vitest": "^1.4.0"
   }

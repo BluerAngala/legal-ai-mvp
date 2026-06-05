@@ -1,0 +1,6 @@
+{
+  "worker": "iii-directory",
+  "source": "registry",
+  "tag_or_version": "0.8.1",
+  "schema": 1
+}
