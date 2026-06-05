@@ -34,6 +34,8 @@ workers:
     - ./workers/knowledge
     - ./workers/analysis
     - ./workers/docgen
+    - ./workers/pi-user
+    - ./workers/pi-internal
 
 # HTTP Trigger 配置
 http:

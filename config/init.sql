@@ -199,3 +199,43 @@ CREATE TRIGGER tr_templates_updated_at
     BEFORE UPDATE ON templates
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at();
+
+-- ============================================
+-- 法条表（28 条预置法条 + LLM 引证对照）
+-- ============================================
+CREATE TABLE legal_articles (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    code VARCHAR(100) NOT NULL,
+    article VARCHAR(50) NOT NULL,
+    category VARCHAR(50) NOT NULL,
+    content TEXT NOT NULL,
+    keywords TEXT[] DEFAULT '{}',
+    jurisdiction VARCHAR(10) DEFAULT 'CN',
+    effective_date DATE,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX idx_articles_code ON legal_articles(code);
+CREATE INDEX idx_articles_category ON legal_articles(category);
+CREATE INDEX idx_articles_keywords ON legal_articles USING GIN(keywords);
+CREATE UNIQUE INDEX idx_articles_unique ON legal_articles(code, article);
+
+-- ============================================
+-- 风险关键词表（analysis-worker 检测用）
+-- ============================================
+CREATE TABLE risk_keywords (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    category VARCHAR(50) NOT NULL,
+    keyword VARCHAR(200) NOT NULL,
+    level VARCHAR(10) NOT NULL,
+    description TEXT,
+    suggestion TEXT,
+    domain VARCHAR(50) DEFAULT 'contract',
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX idx_risk_kw_category ON risk_keywords(category);
+CREATE INDEX idx_risk_kw_level ON risk_keywords(level);
+CREATE UNIQUE INDEX idx_risk_kw_unique ON risk_keywords(category, keyword);
