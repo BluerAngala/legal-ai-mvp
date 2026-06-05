@@ -184,7 +184,7 @@ export const LLM_PROVIDER_PRESETS: Record<
 > = {
 	siliconflow: {
 		baseUrl: "https://api.siliconflow.cn/v1",
-		chat: "Pro/MiniMaxAI/MiniMax-M2.5",
+		chat: "deepseek-ai/DeepSeek-V3",
 		embedding: "BAAI/bge-m3",
 	},
 	openai: {

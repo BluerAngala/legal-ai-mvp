@@ -1,7 +1,7 @@
 /**
  * LegalAI MVP - LLM Provider Configuration
  * 支持多种 LLM API: OpenAI, Claude, SiliconFlow, DeepSeek, MiniMax
- * 默认使用硅基流动的 MiniMaxAI/MiniMax-M2.5 模型
+ * 默认使用硅基流动的 DeepSeek-V3 模型（6.7s，无 reasoning 开销，最优选择）
  */
 
 export interface LLMConfig {
