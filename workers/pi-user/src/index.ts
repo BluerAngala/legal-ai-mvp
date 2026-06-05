@@ -26,6 +26,7 @@ const log = createLogger("pi-user-worker");
 const llm = new LLMClient(cfg.llm);
 const sdk = init(cfg.engine.url, {
 	workerName: cfg.engine.workerName,
+	invocationTimeoutMs: 180_000,
 });
 
 /* ---------- Types ---------- */
@@ -109,7 +110,7 @@ async function delegateToInternal(task: {
 	attachments?: unknown[];
 }): Promise<unknown> {
 	try {
-		const result = await sdk.trigger("pi-internal.execute", task);
+		const result = await sdk.trigger("pi-internal::execute", task);
 		return result;
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);

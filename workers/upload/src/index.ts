@@ -22,7 +22,10 @@ const log = createLogger("upload-worker");
 const UPLOADS_DIR =
 	process.env.UPLOADS_DIR ?? join(process.cwd(), "data", "uploads");
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
-const sdk = init(cfg.engine.url, { workerName: cfg.engine.workerName });
+const sdk = init(cfg.engine.url, {
+	workerName: cfg.engine.workerName,
+	invocationTimeoutMs: 180_000,
+});
 
 /* ---------- Schemas ---------- */
 

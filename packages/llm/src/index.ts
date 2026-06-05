@@ -43,13 +43,12 @@ export interface ChatOptions {
 	maxTokens?: number;
 	stop?: string[];
 	jsonMode?: boolean;
+	timeoutMs?: number;
 }
-
 export interface EmbeddingVector {
 	index: number;
 	vector: number[];
 }
-
 /* ---------- Risk Detection (无硬编码关键词) ---------- */
 
 export interface RiskKeyword {
@@ -78,6 +77,12 @@ export class LLMClient {
 	constructor(cfg: LLMConfig, logger?: Logger) {
 		this.cfg = cfg;
 		this.logger = (logger ?? createLogger("llm")).child(cfg.provider);
+		this.logger.info("LLMClient init", {
+			provider: cfg.provider,
+			model: cfg.chatModel,
+			apiKeyPrefix: cfg.apiKey?.slice(0, 8) ?? "MISSING",
+			baseUrl: cfg.baseUrl,
+		});
 		this.validate();
 		if (cfg.provider === "anthropic") {
 			this.anthropic = new Anthropic({ apiKey: cfg.apiKey });
@@ -97,27 +102,47 @@ export class LLMClient {
 		}
 		return this.chatOpenAI(messages, opts);
 	}
-
 	private async chatOpenAI(
 		messages: ChatMessage[],
 		opts: ChatOptions,
 	): Promise<string> {
+		const body: Record<string, unknown> = {
+			model: this.cfg.chatModel,
+			messages: messages.map((m) => ({ role: m.role, content: m.content })),
+			temperature: opts.temperature ?? 0.3,
+			max_tokens: opts.maxTokens ?? 2048,
+		};
+		if (opts.stop) body.stop = opts.stop;
+		if (opts.jsonMode) body.response_format = { type: "json_object" };
+		const url = `${this.cfg.baseUrl ?? "https://api.openai.com/v1"}/chat/completions`;
 		try {
-			const res = await this.openai!.chat.completions.create({
-				model: this.cfg.chatModel,
-				messages: messages.map((m) => ({ role: m.role, content: m.content })),
-				temperature: opts.temperature ?? 0.3,
-				max_tokens: opts.maxTokens ?? 2048,
-				stop: opts.stop,
-				response_format: opts.jsonMode ? { type: "json_object" } : undefined,
+			const res = await fetch(url, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					Authorization: `Bearer ${this.cfg.apiKey}`,
+				},
+				body: JSON.stringify(body),
+				signal: AbortSignal.timeout(opts.timeoutMs ?? 180_000),
 			});
-			const content = res.choices[0]?.message?.content ?? "";
+			if (!res.ok) {
+				const errText = await res.text();
+				throw new Error(`HTTP ${res.status}: ${errText.slice(0, 500)}`);
+			}
+			const data = (await res.json()) as {
+				choices: Array<{ message: { content: string } }>;
+			};
+			const content = data.choices?.[0]?.message?.content ?? "";
 			if (!content) throw new LLMError("Empty LLM response");
 			return content;
 		} catch (err) {
+			const errAny = err as any;
 			this.logger.error("chat failed", {
 				err: String(err),
+				errCode: errAny.cause?.code,
+				errMsg: errAny.cause?.message,
 				model: this.cfg.chatModel,
+				url,
 			});
 			throw new LLMError(
 				`OpenAI-compatible chat failed: ${(err as Error).message}`,

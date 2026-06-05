@@ -156,11 +156,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 			`[config] Invalid environment configuration:\n${issues}\n\nSee .env.example for required variables.`,
 		);
 	}
-
-	cached = parsed.data;
+	cached = applyLLMPreset(parsed.data);
 	return cached;
 }
-
 /** 测试用：清除缓存 */
 export function resetConfigCache(): void {
 	cached = null;

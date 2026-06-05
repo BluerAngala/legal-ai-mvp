@@ -97,6 +97,40 @@ workers:
         x86_64-unknown-linux-musl:
           url: https://github.com/iii-hq/workers/releases/download/database/v0.2.2/database-x86_64-unknown-linux-musl.tar.gz
           sha256: 811e0037d5df0c1b90db1e635f9fbd4ed3c176fa264fa497bb40c4b18355192b
+  email:
+    version: 0.1.1
+    type: binary
+    dependencies: {}
+    source:
+      kind: binary
+      artifacts:
+        aarch64-apple-darwin:
+          url: https://github.com/iii-hq/workers/releases/download/email/v0.1.1/email-aarch64-apple-darwin.tar.gz
+          sha256: 4811144de203cb1e165eaaf52a87c51d631c65349ae7de60b6cdf7ba44499889
+        aarch64-pc-windows-msvc:
+          url: https://github.com/iii-hq/workers/releases/download/email/v0.1.1/email-aarch64-pc-windows-msvc.zip
+          sha256: ee0cce0e41b9687a8729065ebfe0b72b40b2630aa6bcb6ed5e2468f2cc3c1fa5
+        aarch64-unknown-linux-gnu:
+          url: https://github.com/iii-hq/workers/releases/download/email/v0.1.1/email-aarch64-unknown-linux-gnu.tar.gz
+          sha256: 4ef66077f440eadb90bcd7f4ed6abceafcfba9f21a98e207e9c0cb891f19ec49
+        armv7-unknown-linux-gnueabihf:
+          url: https://github.com/iii-hq/workers/releases/download/email/v0.1.1/email-armv7-unknown-linux-gnueabihf.tar.gz
+          sha256: fddd51dee14baa473ca80305b9f4ede5a0c4a6314a743004df669c6450789f53
+        i686-pc-windows-msvc:
+          url: https://github.com/iii-hq/workers/releases/download/email/v0.1.1/email-i686-pc-windows-msvc.zip
+          sha256: d69a24f019e8937f50bf562d6f5812418eedee67e2ff531699d1fe7f0012f1cd
+        x86_64-apple-darwin:
+          url: https://github.com/iii-hq/workers/releases/download/email/v0.1.1/email-x86_64-apple-darwin.tar.gz
+          sha256: a3a6e21d78db63acbc9e06145d946547b8e53c74b1adc404c2058204cc27ac4b
+        x86_64-pc-windows-msvc:
+          url: https://github.com/iii-hq/workers/releases/download/email/v0.1.1/email-x86_64-pc-windows-msvc.zip
+          sha256: 957c89375f7ff9efd196e43901222fe5d9b359f9c8fe2ee528828a9f9b7469f2
+        x86_64-unknown-linux-gnu:
+          url: https://github.com/iii-hq/workers/releases/download/email/v0.1.1/email-x86_64-unknown-linux-gnu.tar.gz
+          sha256: 12ca308f9216fcf80afaccae9ec9d655f73a12b85570eecc330830c63a97e2fe
+        x86_64-unknown-linux-musl:
+          url: https://github.com/iii-hq/workers/releases/download/email/v0.1.1/email-x86_64-unknown-linux-musl.tar.gz
+          sha256: ec96abbb92a49b7de07e86c4d1768008ad556630ab16c6128e73ebce166c2d77
   harness:
     version: 0.5.5
     type: bundle
