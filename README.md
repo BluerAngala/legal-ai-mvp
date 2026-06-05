@@ -99,6 +99,85 @@ pnpm tauri build
 - 金色（#c9a961）+ 朱红印章（#b8412a）+ 米黄宣纸（#e8dcc4）三色系
 - 印章式 LOGO + 金色装饰线条
 
+## 🧪 开发测试
+
+### 环境要求
+
+- Node.js >= 20
+- PostgreSQL 15+
+- Redis 7+
+- iii 引擎 (WebSocket: ws://localhost:49134)
+
+### 环境变量
+
+创建 `.env` 文件：
+
+```bash
+# iii 引擎（WebSocket）
+III_ENGINE_URL=ws://localhost:49134
+
+# 数据库
+DATABASE_URL=postgresql://postgres:legalai123@localhost:5432/legalai
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=legalai
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=legalai123
+
+# Redis
+REDIS_URL=redis://localhost:6379
+
+# LLM
+LLM_API_KEY=<your-api-key>
+LLM_PROVIDER=siliconflow
+```
+
+### 开发命令
+
+```bash
+# 启动所有服务 + Workers
+npm run start:all
+
+# 启动所有（跨平台脚本）
+node scripts/start.js
+
+# 仅启动服务
+node scripts/start.js --services
+
+# 仅启动 Workers
+node scripts/start.js --workers
+
+# iii 控制台
+npm run console
+
+# 代码检查
+npm run lint
+
+# 代码格式化
+npm run format
+
+# 运行测试
+npm run test
+```
+
+### 启动流程
+
+1. **启动 PostgreSQL 和 Redis**
+2. **启动 iii 引擎** (WebSocket ws://localhost:49134)
+3. **初始化数据库** (执行 `config/init.sql`)
+4. **安装依赖**: `yarn install`
+5. **启动开发**: `npm run start:all`
+
+### Worker 开发
+
+| Worker | 端口 | 功能 |
+|--------|------|------|
+| upload-worker | 3112 | 文件上传 |
+| document-worker | 3113 | 文档解析 |
+| knowledge-worker | 3114 | 知识检索 |
+| analysis-worker | 3115 | AI 分析 |
+| docgen-worker | 3116 | 文档生成 |
+
 ## 🛠️ 技术栈
 
 ### 前端
