@@ -1,77 +1,10 @@
-# LegalAI MVP - iii Engine Configuration
-# 完整配置：9 个官方 worker + engine builtins
-# 注：HTTP API、Stream、State、Queue、Cron 等通过单独的 worker 配置
-#     iii-http 提供 3111 端口；iii-stream 提供 3112 端口
-
+---
 workers:
   # ──────────────────────────────────────────────────────
   # Engine 内置 Worker
   # ──────────────────────────────────────────────────────
 
   # iii-observability — OpenTelemetry 追踪/指标/日志
-  - name: iii-observability
-    config:
-      enabled: true
-      exporter: memory
-      logs_console_output: true
-      logs_enabled: true
-      logs_exporter: memory
-      logs_max_count: 1000
-      logs_retention_seconds: 3600
-      memory_max_spans: 1000000
-      metrics_enabled: true
-      metrics_exporter: memory
-      metrics_max_count: 10000
-      metrics_retention_seconds: 3600
-      sampling_ratio: 1
-      service_name: legalai
-      service_version: ${SERVICE_VERSION:__III_ENGINE_VERSION__}
-
-  # iii-queue — 异步任务队列（持久化+重试+DLQ）
-  - name: iii-queue
-    config:
-      adapter:
-        name: builtin
-      queue_configs:
-        default:
-          max_retries: 5
-          concurrency: 10
-          type: standard
-          backoff_ms: 1000
-        document-parse:
-          max_retries: 3
-          concurrency: 5
-          type: standard
-        analysis:
-          max_retries: 3
-          concurrency: 3
-          type: standard
-        docgen:
-          max_retries: 2
-          concurrency: 2
-          type: standard
-
-  # iii-state — KV 状态管理
-  - name: iii-state
-    config:
-      adapter:
-        config:
-          file_path: ./data/state_store.db
-          store_method: file_based
-        name: kv
-
-  # iii-stream — SSE 流式响应
-  - name: iii-stream
-    config:
-      host: 127.0.0.1
-      port: 3112
-      adapter:
-        config:
-          file_path: ./data/stream_store
-          store_method: file_based
-        name: kv
-
-  # iii-cron — 定时任务（jobs 通过 SDK 动态注册）
   - name: iii-cron
     config:
       adapter:
@@ -216,15 +149,6 @@ workers:
   - name: iii-lsp
 
   # configuration — 配置管理
-  - name: configuration
-    config:
-      adapter:
-        config:
-          directory: ./data/configuration
-        name: fs
-      ttl_seconds: 0
-
-  # database — PostgreSQL/MySQL/SQLite
   - name: database
     config:
       databases:
@@ -300,3 +224,74 @@ workers:
         max_attachment_bytes: 26214400
         max_recipients: 100
         send_timeout_ms: 30000
+  - name: configuration
+    config:
+      adapter:
+        config:
+          directory: ./data/configuration
+        name: fs
+      ttl_seconds: 0
+  - name: iii-observability
+    config:
+      enabled: true
+      exporter: memory
+      logs_console_output: true
+      logs_enabled: true
+      logs_exporter: memory
+      logs_max_count: 1000
+      logs_retention_seconds: 3600
+      memory_max_spans: 1000000
+      metrics_enabled: true
+      metrics_exporter: memory
+      metrics_max_count: 10000
+      metrics_retention_seconds: 3600
+      sampling_ratio: 1
+      service_name: legalai
+      service_version: ${SERVICE_VERSION:__III_ENGINE_VERSION__}
+  - name: iii-queue
+    config:
+      adapter:
+        name: builtin
+      queue_configs:
+        analysis:
+          concurrency: 3
+          max_retries: 3
+          type: standard
+        default:
+          backoff_ms: 1000
+          concurrency: 10
+          max_retries: 5
+          type: standard
+        docgen:
+          concurrency: 2
+          max_retries: 2
+          type: standard
+        document-parse:
+          concurrency: 5
+          max_retries: 3
+          type: standard
+  - name: iii-state
+    config:
+      adapter:
+        config:
+          file_path: ./data/state_store.db
+          store_method: file_based
+        name: kv
+  - name: iii-stream
+    config:
+      adapter:
+        config:
+          file_path: ./data/stream_store
+          store_method: file_based
+        name: kv
+      host: 127.0.0.1
+      port: 3112
+  - name: harness
+    env:
+      III_ISOLATION: "false"
+      OTEL_ENABLED: "false"
+    config:
+      default_api_url: https://api.siliconflow.cn/v1/chat/completions
+      default_model: deepseek-ai/DeepSeek-V3
+      default_max_tokens: 4096
+      api_key: ${LLM_API_KEY}

@@ -26,7 +26,7 @@ workers:
           url: https://github.com/iii-hq/workers/releases/download/coder/v0.2.0/coder-x86_64-unknown-linux-musl.tar.gz
           sha256: 79529d46199e0bb6f825fc2fe49639b567abac36f035e9c774ed45f47bb0f5a9
   configuration:
-    version: 0.18.0
+    version: 0.17.0
     type: engine
     dependencies: {}
   console:
@@ -132,7 +132,7 @@ workers:
           url: https://github.com/iii-hq/workers/releases/download/email/v0.1.1/email-x86_64-unknown-linux-musl.tar.gz
           sha256: ec96abbb92a49b7de07e86c4d1768008ad556630ab16c6128e73ebce166c2d77
   harness:
-    version: 0.5.5
+    version: 0.5.6
     type: bundle
     dependencies:
       configuration: ^0.17.0
@@ -143,8 +143,8 @@ workers:
       iii-stream: ^0.17.0
     source:
       kind: bundle
-      archive_url: https://github.com/iii-hq/workers/releases/download/harness/v0.5.5/harness.tar.gz
-      sha256: 89dbb838ed2ec73d9a84e6745097c614c9c0a58c1912b92f3c23f6d1c2d0d0be
+      archive_url: https://github.com/iii-hq/workers/releases/download/harness/v0.5.6/harness.tar.gz
+      sha256: e96cd0822edc094e362f9425e9261ed9f2c8cc35e96b80d7607ab89c083756f6
   iii-cron:
     version: 0.18.0
     type: engine

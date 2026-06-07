@@ -170,13 +170,28 @@ async function piAsk(input: unknown): Promise<{
 	const args = unwrapApiRequest<AskInput>(input);
 	const t0 = Date.now();
 	log.info("收到问题", { question: args.question });
+	// ── 短路路径：简单法律事实性问题 → 直接 search，不走 pi-internal ──
+	if (isQuickLegalQuestion(args.question)) {
+		log.info("走短路路径: 直接 search");
+		const searchResult = await sdk.trigger("knowledge::search", {
+			query: args.question,
+			topK: 3,
+			useCache: true,
+		}) as { body?: { results?: Array<{ documentTitle?: string; content?: string }> } };
+		const docs = searchResult?.body?.results ?? [];
+		const answer = formatSearchResults(args.question, docs);
+		log.info("piAsk 短路完成", { totalMs: Date.now() - t0, docsFound: docs.length });
+		return {
+			answer,
+			understanding: { intent: args.question, domain: "法律", requirements: [], clarifyingQuestions: [] },
+			internal: searchResult,
+		};
+	}
+	// ── 完整路径：复杂问题走 pi-internal 动态编排 ──
 	// 1. 理解需求
 	const t1 = Date.now();
 	const understanding = await understandUserNeed(args);
-	log.info("理解完成", {
-		understanding,
-		durationMs: Date.now() - t1,
-	});
+	log.info("理解完成", { understanding, durationMs: Date.now() - t1 });
 	// 2. 委派给内部
 	const t2 = Date.now();
 	const internalResult = await delegateToInternal({
@@ -187,21 +202,46 @@ async function piAsk(input: unknown): Promise<{
 		history: args.history,
 		attachments: args.attachments,
 	});
-	log.info("内部执行完成", {
-		durationMs: Date.now() - t2,
-	});
+	log.info("内部执行完成", { durationMs: Date.now() - t2 });
 	// 3. 友好化输出
 	const t3 = Date.now();
-	const answer = await formatForUser(
-		args.question,
-		understanding,
-		internalResult,
-	);
-	log.info("格式化完成", {
-		durationMs: Date.now() - t3,
-	});
+	const answer = await formatForUser(args.question, understanding, internalResult);
+	log.info("格式化完成", { durationMs: Date.now() - t3 });
 	log.info("piAsk 总耗时", { totalMs: Date.now() - t0 });
 	return { answer, understanding, internal: internalResult };
+}
+/* ─── 短路判断：哪些问题不需要 pi-internal ─── */
+const QUICK_KEYWORDS = [
+	"多久", "多少", "几年", "几天", "多少钱", "几天内",
+	"规定", "条款", "法", "条", "试用期", "合同", "工资", "赔偿",
+	"解除", "终止", "违约金", "加班", "年假", "社保",
+	"权利", "义务", "责任", "时效", "诉讼", "仲裁",
+];
+const COMPLEX_KEYWORDS = [
+	"收购", "并购", "尽调", "审查", "合同对比", "起草",
+	"诉讼", "仲裁", "纠纷", "争议", "谈判",
+];
+function isQuickLegalQuestion(question: string): boolean {
+	const q = question.toLowerCase();
+	// 有复杂关键词 → 不短路
+	if (COMPLEX_KEYWORDS.some((k) => q.includes(k))) return false;
+	// 有法律事实关键词且问题短 → 短路
+	const keywordCount = QUICK_KEYWORDS.filter((k) => q.includes(k)).length;
+	return keywordCount >= 1 && question.length < 80;
+}
+function formatSearchResults(
+	question: string,
+	docs: Array<{ documentTitle?: string; content?: string }>,
+): string {
+	if (docs.length === 0) {
+		return `抱歉，我在知识库中没有找到与"${question}"直接相关的内容。\n\n建议您：\n1. 换个关键词再试试\n2. 如果有具体合同，可以上传后让我帮您分析`;
+	}
+	const lines = docs.map((d) => {
+		const title = d.documentTitle ?? "相关条款";
+		const content = d.content ?? "";
+		return `**${title}**\n${content}`;
+	});
+	return `根据知识库，以下是相关法律规定：\n\n${lines.join("\n\n")}`;
 }
 
 async function piChat(input: unknown): Promise<{

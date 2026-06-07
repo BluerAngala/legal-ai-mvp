@@ -80,3 +80,10 @@ coverage/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Env files (any *.env pattern, including scripts/*.env)
+*.env
+!*.env.example
+
+# Runtime data
+data/

@@ -115,40 +115,20 @@ async function planExecution(task: {
 		.map((c) => `- ${c.function}: ${c.description}`)
 		.join("\n");
 
-	const prompt = `你是任务编排专家。根据用户需求和可用能力，规划执行步骤。
-
-用户需求：${task.intent}
-领域：${task.domain}
-具体要求：
-${task.requirements.map((r, i) => `${i + 1}. ${r}`).join("\n")}
-
-可用 worker 能力：
+	const prompt = `你是任务编排专家。
+【任务】${task.intent}
+【领域】${task.domain}
+【要求】${task.requirements.map((r, i) => `${i + 1}. ${r}`).join("；")}
+【可用能力】
 ${capsText}
-
-请规划执行计划（纯 JSON，无 markdown）：
-{
-  "reasoning": "为什么这样规划",
-  "steps": [
-    {
-      "step": 1,
-      "description": "这一步做什么",
-      "function": "worker.function_name（必须是上面列出的能力名）",
-      "parameters": {"key": "value"},
-      "dependsOn": [前序步骤编号],
-      "optional": false
-    }
-  ]
-}
-
-规划原则：
-1. 简单任务：1-2步完成
-2. 复杂任务：分解为多个步骤
-3. 步骤之间可以有依赖关系
-4. 必要时并行执行（dependsOn 相同）
-5. 优先使用最合适的能力
-6. **【强制】任何涉及法律条文、劳动合同、权利义务、违约责任等事实性问题，第一步必须调用 knowledge::search 查询知识库**
-7. **【强制】如果 knowledge::search 返回了结果，后续步骤必须基于这些结果回答，不得凭空编造**
-8. 步骤要可执行、可验证`;
+请返回纯 JSON 计划：
+{"reasoning":"...","steps":[{"step":1,"function":"knowledge::search","parameters":{"query":"搜索关键词"},"dependsOn":[],"optional":false}]}
+规则（严格遵守）：
+~ 事实性问题（法律条文/合同条款/权利义务）：1步，直接 search 后用 search 结果回答
+~ 搜索结果本身就包含答案时：只调用 knowledge::search，不要再调用 analysis/summarize
+~ 多步仅当问题包含多个独立子任务时使用
+~ 不要推测用户所在地区/身份，默认中国劳动法
+~ dependsOn 相同数组的步骤可并行`;
 
 	try {
 		const messages: ChatMessage[] = [

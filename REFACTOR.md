@@ -232,3 +232,77 @@ src-tauri/src/
 ---
 
 > 维护人：直接在对应行内把 ⬜ 改成 ✅ 并写明 commit hash 即可。
+
+---
+
+## 六、Path A：Harness 官方 Worker 集成（✅ 已完成）
+
+> **用户决策**：用官方 harness 替代自定义 pi-internal 编排层  
+> **目标**：FSM 驱动的 turn-orchestrator + session 树 + 多 provider 支持
+
+### 6.1 已完成的改造
+
+| 步骤 | 内容 | 状态 |
+|------|------|------|
+| 6.1.1 | iii engine 正常启动（无 Docker，无 OTel） | ✅ |
+| 6.1.2 | harness bundle 本地运行（`node index.mjs`，绕过 Docker sandbox） | ✅ |
+| 6.1.3 | OTel fetch wrapper 已 patch（`patchGlobalFetch` no-op） | ✅ |
+| 6.1.4 | DEFAULT_API_URL5 → SiliconFlow URL（bundle 内 patch） | ✅ |
+| 6.1.5 | `III_ISOLATION=false` / `OTEL_ENABLED=false` 设置 | ✅ |
+| 6.1.6 | `OPENAI_API_KEY` env 设为 SiliconFlow key（provider fallback） | ✅ |
+| 6.1.7 | `run::start` + `turn::get_state` + `session-tree::messages` 端到端测试通过 | ✅ |
+| 6.1.8 | 200 functions 注册成功（含 run/turn/session/provider FSM 全套） | ✅ |
+
+### 6.2 启动方式
+
+```bash
+# 1. 设置环境变量（关键！）
+export LLM_API_KEY='your-siliconflow-key'
+export OPENAI_API_KEY='your-siliconflow-key'
+export III_ISOLATION='false'
+export OTEL_ENABLED='false'
+
+# 2. 启动 iii engine
+iii --config ./config.yaml
+
+# 3. 启动 harness bundle（单独进程，不走 Docker sandbox）
+cd /Users/bluer/.iii/workers-bundle/harness
+node index.mjs --config ./iii.worker.yaml --url ws://localhost:49134
+
+# 或使用脚本
+bash scripts/start-harness.sh   # 只启动 harness
+bash scripts/start-all.sh         # 同时启动 engine + harness
+```
+
+### 6.3 已验证的 FSM 流程
+
+```
+run::start (session_id, provider="openai", model="deepseek-ai/DeepSeek-V3", messages)
+    → turn::get_state: state="running"
+    → LLM stream via provider::openai::stream (SiliconFlow)
+    → turn::get_state: state="stopped", turn_count=1
+    → session-tree::messages: [user_msg, assistant_msg]
+```
+
+### 6.4 关键修复记录
+
+| 问题 | 原因 | 修复 |
+|------|------|------|
+| `m.content.filter is not a function` | messages 中 `content` 传了 string 而非 `ContentBlock[]` | 传 `content: [{"type":"text","text":"..."}]` |
+| `fetch failed: TypeError` | OTel fetch wrapper 注入了不可识别的 trace headers | bundle 内 patch `patchGlobalFetch` 为 no-op |
+| harness Docker sandbox 失败 | `docker.io/iiidev/node` 镜像拉不到 | `III_ISOLATION=false` + bundle 直接 `node index.mjs` |
+| Provider "no credential" | `provider-openai` 从 `process.env.OPENAI_API_KEY` 读 key | 设置 `OPENAI_API_KEY=SiliconFlow_key` |
+| config.yaml `provider_openai` 报错 | top-level key 不被 engine 接受 | 删 top-level，通过 env 和 bundle 默认值解决 |
+
+### 6.5 下一步
+
+| 步骤 | 内容 | 状态 |
+|------|------|------|
+| 6.5.1 | pi-user / pi-internal 从 harness FSM 暴露的工具中调用业务 worker（knowledge, analysis, docgen） | ⬜ |
+| 6.5.2 | `approval-gate` 配置（允许无需审批的 ask 模式） | ⬜ |
+| 6.5.3 | MCP worker 注册业务函数（桌面端走 MCP 调用业务能力） | ⬜ |
+| 6.5.4 | 桌面端通过 `run::start` FSM 替代直接 `pi-user::ask` HTTP 调用 | ⬜ |
+
+---
+
+> 维护人：直接在对应行内把 ⬜ 改成 ✅ 并写明 commit hash 即可。
